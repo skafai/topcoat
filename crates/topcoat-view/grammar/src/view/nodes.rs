@@ -14,6 +14,31 @@ use crate::view::{
 /// formatting rules for laying out siblings.
 pub struct Nodes(Vec<Node>);
 
+impl Nodes {
+    /// Constructs an empty `Nodes`.
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Consumes `self` and returns the inner `Vec<Node>`.
+    #[must_use]
+    pub fn into_vec(self) -> Vec<Node> {
+        self.0
+    }
+}
+
+impl From<Vec<Node>> for Nodes {
+    fn from(nodes: Vec<Node>) -> Self {
+        Self(nodes)
+    }
+}
+
+impl Default for Nodes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Deref for Nodes {
     type Target = [Node];
 

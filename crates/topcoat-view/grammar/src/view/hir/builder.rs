@@ -8,7 +8,7 @@ use super::{
 use crate::view::{NamedArg, Nodes};
 
 /// AST nodes that can lower themselves into a [`ViewBuilder`].
-pub(crate) trait LowerView {
+pub trait LowerView {
     fn lower(&self, builder: &mut ViewBuilder);
 }
 
@@ -18,7 +18,7 @@ pub(crate) trait LowerView {
 /// Adjacent literal markup is concatenated into `static_segment` and flushed
 /// as a single [`Node::StaticSegment`] whenever a dynamic node (expression,
 /// control flow) is lowered.
-pub(crate) struct ViewBuilder {
+pub struct ViewBuilder {
     nodes: Vec<Node>,
     static_segment: String,
 }

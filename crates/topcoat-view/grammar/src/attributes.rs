@@ -53,6 +53,12 @@ impl Attributes {
     }
 }
 
+impl Default for Attributes {
+    fn default() -> Self {
+        Self { cx: None, items: Vec::new() }
+    }
+}
+
 impl LowerView for Attributes {
     fn lower(&self, builder: &mut ViewBuilder) {
         let mut visitor = DynamicAttributesVisitor::default();

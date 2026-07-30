@@ -42,6 +42,9 @@ pub mod icon;
 #[cfg(feature = "mail")]
 pub mod mail;
 
+#[cfg(feature = "mdx")]
+pub use topcoat_mdx_macro::compile_mdx;
+
 #[cfg(feature = "router")]
 pub mod router;
 
