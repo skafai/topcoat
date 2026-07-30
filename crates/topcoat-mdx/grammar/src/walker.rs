@@ -5,8 +5,10 @@
 //! through the same code generation pipeline as handwritten templates.
 
 use proc_macro2::Span;
-use syn::{parse_quote, LitStr};
-use topcoat_view_grammar::attributes::Attributes;
+use syn::{parse_quote, Ident, LitStr};
+use topcoat_view_grammar::attributes::{
+    Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes,
+};
 use topcoat_view_grammar::view::*;
 
 use crate::parse::get_parse_options;
@@ -69,7 +71,14 @@ pub fn walk_node(node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Break(_) => {
             vec![Node::Element(Box::new(void_element("br")))]
         }
-        // Default: skip unrecognized nodes for now
+        markdown::mdast::Node::Link(l) => vec![walk_link(l)],
+        markdown::mdast::Node::Image(i) => vec![walk_image(i)],
+        markdown::mdast::Node::Code(c) => vec![walk_code_block(c)],
+        markdown::mdast::Node::List(l) => vec![walk_list(l)],
+        markdown::mdast::Node::ListItem(li) => vec![walk_list_item(li)],
+        markdown::mdast::Node::Table(t) => vec![walk_table(t)],
+        markdown::mdast::Node::Delete(d) => vec![walk_delete(d)],
+        // Default: skip unrecognized nodes (e.g., Frontmatter, MdxJsxFlow, MdxJsxText)
         _ => Vec::new(),
     }
 }
@@ -99,52 +108,307 @@ pub fn walk_to_writer(node: &markdown::mdast::Node, writer: &mut ViewWriter) {
     }
 }
 
-/// Constructs a normal HTML element with opening and closing tags.
+// ---------------------------------------------------------------------------
+// Node-specific walkers
+// ---------------------------------------------------------------------------
+
+/// Walks a link node: `<a href="url" title="...">...</a>`.
+fn walk_link(link: &markdown::mdast::Link) -> Node {
+    let mut attrs = Vec::with_capacity(2);
+    attrs.push(create_attribute("href", &link.url));
+    if let Some(title) = &link.title {
+        attrs.push(create_attribute("title", title));
+    }
+    let attributes = with_attributes(attrs);
+    let children = walk_nodes(&link.children);
+    Node::Element(Box::new(normal_element_with_attrs("a", attributes, children)))
+}
+
+/// Walks an image node: `<img src="url" alt="alt" title="...">`.
+fn walk_image(image: &markdown::mdast::Image) -> Node {
+    let mut attrs = Vec::with_capacity(3);
+    attrs.push(create_attribute("src", &image.url));
+    attrs.push(create_attribute("alt", &image.alt));
+    if let Some(title) = &image.title {
+        attrs.push(create_attribute("title", title));
+    }
+    let attributes = with_attributes(attrs);
+    Node::Element(Box::new(void_element_with_attrs("img", attributes))
+    )
+}
+
+/// Walks a fenced code block: `<pre><code class="language-{lang}">...</code></pre>`.
+fn walk_code_block(code: &markdown::mdast::Code) -> Node {
+    let mut attrs = Vec::new();
+    if let Some(ref lang) = code.lang {
+        attrs.push(create_attribute("class", &format!("language-{lang}")));
+    }
+    let code_attrs = with_attributes(attrs);
+    let code_children = Nodes::from(vec![text_node(&code.value)]);
+    let code_el = normal_element_with_attrs("code", code_attrs, code_children);
+    let pre_children = Nodes::from(vec![Node::Element(Box::new(code_el))]);
+    html_element("pre", pre_children)
+}
+
+/// Walks a list: `<ul>` or `<ol>` with `<li>` children.
+fn walk_list(list: &markdown::mdast::List) -> Node {
+    let tag = if list.ordered { "ol" } else { "ul" };
+    let mut children = Vec::new();
+    for node in &list.children {
+        if let markdown::mdast::Node::ListItem(item) = node {
+            children.push(walk_list_item(item));
+        }
+    }
+    html_element(tag, Nodes::from(children))
+}
+
+/// Walks a list item: `<li>` with optional leading checkbox for task lists.
+fn walk_list_item(item: &markdown::mdast::ListItem) -> Node {
+    let mut children = Vec::new();
+    if let Some(checked) = &item.checked {
+        if *checked {
+            // <input type="checkbox" checked disabled />
+            let mut input_attrs = Vec::with_capacity(3);
+            input_attrs.push(create_attribute("type", "checkbox"));
+            input_attrs.push(create_attribute_bool("checked"));
+            input_attrs.push(create_attribute("disabled", ""));
+            let input_el = self_closing_element("input", with_attributes(input_attrs));
+            children.push(Node::Element(Box::new(input_el)));
+        } else {
+            // <input type="checkbox" disabled /> — no checked attribute
+            let mut input_attrs = Vec::with_capacity(2);
+            input_attrs.push(create_attribute("type", "checkbox"));
+            input_attrs.push(create_attribute("disabled", ""));
+            let input_el = self_closing_element("input", with_attributes(input_attrs));
+            children.push(Node::Element(Box::new(input_el)));
+        }
+    }
+    children.extend(walk_nodes(&item.children).into_vec());
+    html_element("li", Nodes::from(children))
+}
+
+/// Walks a table: `<table><thead>...</thead><tbody>...</tbody></table>`.
+fn walk_table(table: &markdown::mdast::Table) -> Node {
+    let mut child_nodes = Vec::new();
+
+    // Iterate over table.children — each is Node::TableRow.
+    let row_nodes: Vec<&markdown::mdast::TableRow> = table
+        .children
+        .iter()
+        .filter_map(|n| {
+            if let markdown::mdast::Node::TableRow(row) = n {
+                Some(row)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // First row is <thead>, rest is <tbody>.
+    if let Some(head_row) = row_nodes.first() {
+        let th_cells: Vec<Node> = head_row
+            .children
+            .iter()
+            .enumerate()
+            .filter_map(|(col_idx, n)| {
+                if let markdown::mdast::Node::TableCell(cell) = n {
+                    Some(walk_table_cell_inner(cell, true, col_idx, &table.align))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let tr = html_element("tr", Nodes::from(th_cells));
+        let thead = html_element("thead", Nodes::from(vec![tr]));
+        child_nodes.push(thead);
+    }
+
+    if row_nodes.len() > 1 {
+        let body_rows: Vec<Node> = row_nodes[1..]
+            .iter()
+            .map(|row| {
+                let td_cells: Vec<Node> = row
+                    .children
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(col_idx, n)| {
+                        if let markdown::mdast::Node::TableCell(cell) = n {
+                            Some(walk_table_cell_inner(
+                                cell,
+                                false,
+                                col_idx,
+                                &table.align,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                html_element("tr", Nodes::from(td_cells))
+            })
+            .collect();
+        let tbody = html_element("tbody", Nodes::from(body_rows));
+        child_nodes.push(tbody);
+    }
+
+    html_element("table", Nodes::from(child_nodes))
+}
+
+/// Walks a table cell: `<th>` or `<td>` with optional alignment style.
+fn walk_table_cell_inner(
+    cell: &markdown::mdast::TableCell,
+    is_header: bool,
+    col_idx: usize,
+    align: &[markdown::mdast::AlignKind],
+) -> Node {
+    let tag = if is_header { "th" } else { "td" };
+    let mut attrs = Vec::new();
+    // Look up alignment from the table's align vector by column index.
+    if let Some(&align_kind) = align.get(col_idx) {
+        if let markdown::mdast::AlignKind::None = align_kind {
+            // No alignment specified.
+        } else {
+            let value = match align_kind {
+                markdown::mdast::AlignKind::Left => "left",
+                markdown::mdast::AlignKind::Right => "right",
+                markdown::mdast::AlignKind::Center => "center",
+                markdown::mdast::AlignKind::None => unreachable!(),
+            };
+            attrs.push(create_attribute(
+                "style",
+                &format!("text-align: {value}"),
+            ));
+        }
+    }
+    // Cell children are Node variants (Text, Emphasis, etc.), not TableCell.
+    let children = walk_nodes(&cell.children);
+    let attributes = with_attributes(attrs);
+    Node::Element(Box::new(normal_element_with_attrs(tag, attributes, children)))
+}
+
+/// Walks a delete (strikethrough) node: `<del>...</del>`.
+fn walk_delete(delete: &markdown::mdast::Delete) -> Node {
+    let children = walk_nodes(&delete.children);
+    html_element("del", children)
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions for constructing elements and attributes
+// ---------------------------------------------------------------------------
+
+/// Constructs a `Node::Text` from a string.
+fn text_node(content: &str) -> Node {
+    Node::Text(LitStr::new(content, Span::call_site()))
+}
+
+/// Creates an `Ident` that can be a Rust keyword (e.g., "type", "for").
+/// Uses `syn::parse_str` which internally calls `Ident::parse_any`.
+fn make_ident(name: &str) -> Ident {
+    syn::parse_str(name).unwrap_or_else(|_| {
+        // Fallback for names that can't be parsed (shouldn't happen for valid HTML).
+        Ident::new(name, Span::call_site())
+    })
+}
+
+/// Constructs an `ElementName` from a tag name string.
+fn make_element_name(tag: &str) -> ElementName {
+    ElementName::Ident(HtmlIdent {
+        first: make_ident(tag),
+        rest: vec![],
+    })
+}
+
+/// Constructs a normal HTML element with opening and closing tags, wrapped in Node.
 fn html_element(tag: &str, children: Nodes) -> Node {
-    let opening_name = make_element_name(tag);
+    let attributes = Attributes::default();
+    Node::Element(Box::new(normal_element_with_attrs(tag, attributes, children)))
+}
+
+/// Constructs a normal HTML element with custom attributes.
+fn normal_element_with_attrs(tag: &str, attributes: Attributes, children: Nodes) -> Element {
+    let closing_name = make_element_name(tag);
     let opening = OpeningTag {
         lt: parse_quote!(<),
-        name: opening_name,
-        attributes: Attributes::default(),
+        name: make_element_name(tag),
+        attributes,
         gt: parse_quote!(>),
     };
-    let closing_name = make_element_name(tag);
     let closing = ClosingTag {
         lt: parse_quote!(<),
         slash: parse_quote!(/),
         name: closing_name,
         gt: parse_quote!(>),
     };
-    Node::Element(Box::new(Element::Normal {
+    Element::Normal {
         opening_tag: opening,
         children,
         closing_tag: closing,
-    }))
-}
-
-/// Constructs an ElementName from a tag name string.
-fn make_element_name(tag: &str) -> ElementName {
-    ElementName::Ident(HtmlIdent {
-        first: syn::Ident::new(tag, Span::call_site()),
-        rest: vec![],
-    })
+    }
 }
 
 /// Constructs a void HTML element (no closing tag, no children).
 fn void_element(tag: &str) -> Element {
+    void_element_with_attrs(tag, Attributes::default())
+}
+
+/// Constructs a void HTML element with custom attributes.
+fn void_element_with_attrs(tag: &str, attributes: Attributes) -> Element {
     Element::Void {
         tag: OpeningTag {
             lt: parse_quote!(<),
             name: make_element_name(tag),
-            attributes: Attributes::default(),
+            attributes,
             gt: parse_quote!(>),
         },
     }
 }
 
-/// Constructs a `Node::Text` from a string.
-fn text_node(content: &str) -> Node {
-    Node::Text(LitStr::new(content, Span::call_site()))
+/// Constructs a self-closing element (`<tag ... />`).
+fn self_closing_element(tag: &str, attributes: Attributes) -> Element {
+    Element::SelfClosing {
+        tag: SelfClosingTag {
+            lt: parse_quote!(<),
+            name: make_element_name(tag),
+            attributes,
+            slash: parse_quote!(/),
+            gt: parse_quote!(>),
+        },
+    }
+}
+
+/// Creates a key=value attribute.
+fn create_attribute(key: &str, value: &str) -> Attribute {
+    Attribute {
+        key: AttributeKey::Ident(HtmlIdent {
+            first: make_ident(key),
+            rest: vec![],
+        }),
+        eq: parse_quote!(=),
+        value: AttributeValue::LitStr(LitStr::new(value, Span::call_site())),
+    }
+}
+
+/// Creates a boolean attribute (key with no value, e.g., `checked`).
+fn create_attribute_bool(key: &str) -> Attribute {
+    Attribute {
+        key: AttributeKey::Ident(HtmlIdent {
+            first: make_ident(key),
+            rest: vec![],
+        }),
+        eq: parse_quote!(=),
+        value: AttributeValue::LitStr(LitStr::new("true", Span::call_site())),
+    }
+}
+
+/// Wraps a vec of `Attribute`s into an `Attributes` value.
+fn with_attributes(attrs: Vec<Attribute>) -> Attributes {
+    Attributes {
+        cx: None,
+        items: attrs
+            .into_iter()
+            .map(AttributeNode::Attribute)
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -160,6 +424,8 @@ mod tests {
             _ => unreachable!(),
         }
     }
+
+    // ---- Existing tests ----
 
     #[test]
     fn walks_heading() {
@@ -209,7 +475,6 @@ mod tests {
         let tokens = writer.into_token_stream();
         let token_str = quote! { #tokens }.to_string();
         // The raw HTML should appear verbatim (not escaped as &lt;div&gt;).
-        // Token stream string literals escape internal quotes as \".
         assert!(token_str.contains("<div"), "should contain raw <div, got: {token_str}");
         assert!(
             !token_str.contains("&lt;div"),
@@ -306,5 +571,444 @@ mod tests {
         let view = mdx_to_view("# Test");
         assert!(view.cx.is_none());
         assert!(!view.nodes.is_empty());
+    }
+
+    // ---- New tests: links and images ----
+
+    #[test]
+    fn walks_link() {
+        let nodes = parse_and_walk("[text](https://example.com)");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            let has_a = p.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("a")
+                } else {
+                    false
+                }
+            });
+            assert!(has_a, "paragraph should contain <a> element");
+        }
+    }
+
+    #[test]
+    fn walks_link_with_href_attribute() {
+        let nodes = parse_and_walk("[link](https://example.com)");
+        if let Node::Element(p) = &nodes[0] {
+            let a = p.children().iter().find_map(|c| {
+                if let Node::Element(e) = c {
+                    if e.name().string_name().as_deref() == Some("a") {
+                        Some(e.as_ref())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            assert!(a.is_some(), "should find <a> element");
+            let a = a.unwrap();
+            let attrs = a.attributes();
+            assert!(!attrs.is_empty(), "link should have attributes");
+        }
+    }
+
+    #[test]
+    fn walks_image() {
+        let nodes = parse_and_walk("![alt](photo.png)");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    matches!(inner.as_ref(), Element::Void { .. })
+                        && inner.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(has_img, "paragraph should contain <img> void element");
+        }
+    }
+
+    #[test]
+    fn walks_image_with_src_and_alt() {
+        let nodes = parse_and_walk("![Photo](photo.png)");
+        if let Node::Element(p) = &nodes[0] {
+            let img = p.children().iter().find_map(|c| {
+                if let Node::Element(e) = c {
+                    if e.name().string_name().as_deref() == Some("img") {
+                        Some(e.as_ref())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            assert!(img.is_some(), "should find <img> element");
+            let img = img.unwrap();
+            let attrs = img.attributes();
+            assert!(
+                !attrs.is_empty(),
+                "image should have attributes (src, alt)",
+            );
+        }
+    }
+
+    // ---- New tests: code blocks ----
+
+    #[test]
+    fn walks_code_block_with_language() {
+        let nodes = parse_and_walk("```rust\nfn main() {}\n```");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(pre) = &nodes[0] {
+            assert_eq!(
+                pre.name().string_name().as_deref(),
+                Some("pre"),
+                "should be <pre> element"
+            );
+            let has_code = pre.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("code")
+                } else {
+                    false
+                }
+            });
+            assert!(has_code, "<pre> should contain <code>");
+            // Check code has class attribute
+            let code = pre
+                .children()
+                .iter()
+                .find_map(|c| {
+                    if let Node::Element(e) = c {
+                        if e.name().string_name().as_deref() == Some("code") {
+                            Some(e.as_ref())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            assert!(
+                !code.attributes().is_empty(),
+                "code should have class attribute for language",
+            );
+        }
+    }
+
+    #[test]
+    fn walks_code_block_without_language() {
+        let nodes = parse_and_walk("```\nno lang\n```");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(pre) = &nodes[0] {
+            assert_eq!(
+                pre.name().string_name().as_deref(),
+                Some("pre"),
+                "should be <pre> element"
+            );
+        }
+    }
+
+    // ---- New tests: lists ----
+
+    #[test]
+    fn walks_ordered_list() {
+        let nodes = parse_and_walk("1. first");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ol) = &nodes[0] {
+            assert_eq!(
+                ol.name().string_name().as_deref(),
+                Some("ol"),
+                "should be <ol> element"
+            );
+        }
+    }
+
+    #[test]
+    fn walks_unordered_list() {
+        let nodes = parse_and_walk("- item");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ul) = &nodes[0] {
+            assert_eq!(
+                ul.name().string_name().as_deref(),
+                Some("ul"),
+                "should be <ul> element"
+            );
+            let has_li = ul.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("li")
+                } else {
+                    false
+                }
+            });
+            assert!(has_li, "<ul> should contain <li>");
+        }
+    }
+
+    #[test]
+    fn walks_task_list_checked() {
+        let nodes = parse_and_walk("- [x] done");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ul) = &nodes[0] {
+            // The <li> should have a self-closing <input> as first child.
+            let li = ul.children().iter().find_map(|c| {
+                if let Node::Element(e) = c {
+                    if e.name().string_name().as_deref() == Some("li") {
+                        Some(e.as_ref())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            assert!(li.is_some(), "<ul> should contain <li>");
+            let li = li.unwrap();
+            assert!(
+                !li.children().is_empty(),
+                "<li> should contain checkbox input",
+            );
+        }
+    }
+
+    #[test]
+    fn walks_task_list_unchecked() {
+        let nodes = parse_and_walk("- [ ] pending");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ul) = &nodes[0] {
+            let li = ul.children().iter().find_map(|c| {
+                if let Node::Element(e) = c {
+                    if e.name().string_name().as_deref() == Some("li") {
+                        Some(e.as_ref())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            assert!(li.is_some(), "<ul> should contain <li>");
+        }
+    }
+
+    #[test]
+    fn walks_unordered_list_no_checkbox() {
+        // Regular list item (not a task list) should NOT have a checkbox.
+        let nodes = parse_and_walk("- regular item");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ul) = &nodes[0] {
+            let li = ul.children().iter().find_map(|c| {
+                if let Node::Element(e) = c {
+                    if e.name().string_name().as_deref() == Some("li") {
+                        Some(e.as_ref())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            assert!(li.is_some(), "<ul> should contain <li>");
+            let li = li.unwrap();
+            // First child should be text/paragraph, not an <input>.
+            let first_is_input = li.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("input")
+                } else {
+                    false
+                }
+            });
+            assert!(
+                !first_is_input,
+                "regular list item should NOT contain <input> checkbox"
+            );
+        }
+    }
+
+    // ---- New tests: tables ----
+
+    #[test]
+    fn walks_table() {
+        let nodes = parse_and_walk("| A | B |\n|---|---|\n| 1 | 2 |");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(table) = &nodes[0] {
+            assert_eq!(
+                table.name().string_name().as_deref(),
+                Some("table"),
+                "should be <table>"
+            );
+            // Should have thead and tbody children
+            let has_thead = table.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("thead")
+                } else {
+                    false
+                }
+            });
+            let has_tbody = table.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("tbody")
+                } else {
+                    false
+                }
+            });
+            assert!(has_thead, "table should have <thead>");
+            assert!(has_tbody, "table should have <tbody>");
+        }
+    }
+
+    #[test]
+    fn walks_table_with_alignment() {
+        let nodes = parse_and_walk("| A |\n|:---|\n| 1 |");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(table) = &nodes[0] {
+            // Find <th> element
+            let th = find_element_recursive(table, "th");
+            assert!(th.is_some(), "table should have <th>");
+            let th = th.unwrap();
+            assert!(
+                !th.attributes().is_empty(),
+                "aligned <th> should have style attribute"
+            );
+        }
+    }
+
+    // ---- New tests: strikethrough ----
+
+    #[test]
+    fn walks_strikethrough() {
+        let nodes = parse_and_walk("~~deleted~~");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            let has_del = p.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("del")
+                } else {
+                    false
+                }
+            });
+            assert!(has_del, "paragraph should contain <del> element");
+        }
+    }
+
+    // ---- New tests: heading depth ----
+
+    #[test]
+    fn walks_heading_depth_1_to_6() {
+        for (depth, prefix) in [
+            (1, "#"),
+            (2, "##"),
+            (3, "###"),
+            (4, "####"),
+            (5, "#####"),
+            (6, "######"),
+        ] {
+            let content = format!("{prefix} Level {depth}");
+            let nodes = parse_and_walk(&content);
+            assert_eq!(nodes.len(), 1, "depth {depth}: expected one node");
+            if let Node::Element(e) = &nodes[0] {
+                let expected = format!("h{depth}");
+                assert_eq!(
+                    e.name().string_name().as_deref(),
+                    Some(expected.as_str()),
+                    "depth {depth}: expected {expected}",
+                );
+            } else {
+                panic!("depth {depth}: expected element");
+            }
+        }
+    }
+
+    // ---- New tests: attribute construction helpers ----
+
+    #[test]
+    fn create_attribute_builds_key_value() {
+        let attr = create_attribute("href", "https://example.com");
+        assert!(matches!(attr.key, AttributeKey::Ident(_)));
+        assert!(matches!(attr.value, AttributeValue::LitStr(_)));
+    }
+
+    #[test]
+    fn with_attributes_wraps_into_attribute_nodes() {
+        let attrs = with_attributes(vec![create_attribute("class", "btn")]);
+        assert_eq!(attrs.items.len(), 1);
+        assert!(matches!(attrs.items[0], AttributeNode::Attribute(_)));
+    }
+
+    // ---- New tests: walk_node dispatch ----
+
+    #[test]
+    fn walk_node_dispatches_code_block() {
+        // mdast::Code (fenced block) should produce <pre>, not <code> at top.
+        let nodes = parse_and_walk("```python\nprint()\n```");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("pre")),
+            "code block should produce <pre>",
+        );
+    }
+
+    #[test]
+    fn walk_node_dispatches_inline_code() {
+        // mdast::InlineCode should produce <code> inside paragraph.
+        let nodes = parse_and_walk("`inline`");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            let has_code = p.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("code")
+                } else {
+                    false
+                }
+            });
+            assert!(has_code, "inline code should produce <code>");
+        }
+    }
+
+    #[test]
+    fn walk_node_dispatches_image_not_link() {
+        // Image syntax ![alt](src) should produce <img>, not <a>.
+        let nodes = parse_and_walk("![photo](image.png)");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(inner) = c {
+                    inner.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(has_img, "image should produce <img>");
+        }
+    }
+
+    #[test]
+    fn walk_node_dispatches_table() {
+        let nodes = parse_and_walk("| Col |\n|-----|\n| Val |");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("table")),
+            "table should produce <table>",
+        );
+    }
+
+    // ---- Helper for recursive element finding ----
+
+    fn find_element_recursive<'a>(element: &'a Element, tag: &str) -> Option<&'a Element> {
+        if element.name().string_name().as_deref() == Some(tag) {
+            return Some(element);
+        }
+        for child in element.children() {
+            if let Node::Element(inner) = child {
+                if let Some(found) = find_element_recursive(inner, tag) {
+                    return Some(found);
+                }
+            }
+        }
+        None
     }
 }
