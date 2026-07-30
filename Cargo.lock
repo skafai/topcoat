@@ -3097,12 +3097,14 @@ dependencies = [
 name = "topcoat-mdx-macro"
 version = "0.5.0"
 dependencies = [
+ "markdown",
  "proc-macro2",
  "quote",
  "syn",
  "tokio",
  "topcoat",
  "topcoat-mdx-grammar",
+ "topcoat-view-grammar",
 ]
 
 [[package]]
