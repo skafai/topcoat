@@ -53,6 +53,12 @@ impl Attributes {
     }
 }
 
+impl Default for Attributes {
+    fn default() -> Self {
+        Self { cx: None, items: Vec::new() }
+    }
+}
+
 impl WriteView for Attributes {
     fn write(&self, writer: &mut ViewWriter) {
         let mut visitor = DynamicAttributesVisitor::default();
