@@ -56,9 +56,16 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
             return syn::Error::new(Span::call_site(), msg).to_compile_error().into();
         }
     };
-    let canonical_manifest = std::path::Path::new(&manifest_dir)
-        .canonicalize()
-        .unwrap_or_else(|_| manifest_dir.into());
+    let canonical_manifest = match std::path::Path::new(&manifest_dir).canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = format!(
+                "compile_mdx! cannot canonicalize CARGO_MANIFEST_DIR '{}': {e}",
+                manifest_dir
+            );
+            return syn::Error::new(Span::call_site(), msg).to_compile_error().into();
+        }
+    };
 
     if !canonical.starts_with(&canonical_manifest) {
         let msg = format!(

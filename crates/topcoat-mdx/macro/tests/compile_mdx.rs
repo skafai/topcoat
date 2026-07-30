@@ -10,10 +10,11 @@ async fn tracer_compiles() {
 }
 
 #[tokio::test]
-async fn tracer_raw_html_passthrough() {
-    // Verify raw HTML passes through unescaped in the rendered output.
-    // compile_mdx! emits `async { Ok(view) }.await`, so the result is
-    // `Result<View, Error>` — no extra .await needed.
+async fn tracer_renders() {
+    // Combined test: verifies the tracer fixture compiles, renders raw HTML
+    // unescaped, and includes mixed content (markdown + raw HTML).
+    // (Consolidated from tracer_compiles + tracer_raw_html_passthrough +
+    // partially overlapping raw_html_renders_unescaped per IN-01.)
     let view = compile_mdx!("tests/fixtures/tracer.mdx")
         .expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
@@ -61,20 +62,20 @@ async fn commonmark_renders() {
     assert!(html.contains("<strong>"), "should have <strong>");
     assert!(html.contains("<em>"), "should have <em>");
 
-    // Link with href attribute
+    // Link with correct href value (WR-05: value-level assertion)
     assert!(
-        html.contains("<a href="),
-        "should have <a href=>. Got:\n{html}"
+        html.contains(r#"href="https://example.com""#),
+        "should have correct href value. Got:\n{html}"
     );
 
-    // Image with src and alt attributes
+    // Image with src and alt attribute values (WR-05: value-level assertion)
     assert!(
-        html.contains("<img src="),
-        "should have <img src=>. Got:\n{html}"
+        html.contains(r#"src="photo.png""#),
+        "should have correct image src value. Got:\n{html}"
     );
     assert!(
-        html.contains("alt="),
-        "should have alt= attribute. Got:\n{html}"
+        html.contains(r#"alt="Image alt""#),
+        "should have correct alt value. Got:\n{html}"
     );
 
     // Code block: <pre><code
@@ -129,10 +130,18 @@ async fn gfm_renders() {
     assert!(html.contains("<th>"), "should have <th>");
     assert!(html.contains("<td>"), "should have <td>");
 
-    // Table alignment (style="text-align: ...")
+    // Table alignment values (WR-05: value-level assertions)
     assert!(
-        html.contains("text-align:"),
-        "should have text-align: style. Got:\n{html}"
+        html.contains("text-align: left"),
+        "should have left alignment. Got:\n{html}"
+    );
+    assert!(
+        html.contains("text-align: right"),
+        "should have right alignment. Got:\n{html}"
+    );
+    assert!(
+        html.contains("text-align: center"),
+        "should have center alignment. Got:\n{html}"
     );
 
     // Strikethrough
