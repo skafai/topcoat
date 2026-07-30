@@ -14,6 +14,8 @@ rust-version.workspace = true
 proc-macro = false
 
 [dependencies]
+# markdown version must stay synchronized with topcoat-mdx-macro;
+# both crates use markdown-rs types directly (to_mdast, mdast::Node).
 markdown = "1.0"
 topcoat-view-grammar.workspace = true
 
