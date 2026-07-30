@@ -133,15 +133,17 @@ pub fn walk_to_writer(node: &markdown::mdast::Node, builder: &mut ViewBuilder) {
 // ---------------------------------------------------------------------------
 
 /// Checks if a URL uses a dangerous protocol (XSS mitigation, T-01-01).
+/// Blocks `javascript:`, `vbscript:`, and ALL `data:` URIs (including
+/// `data:image/svg+xml` which can execute JS via SVG event handlers).
 fn is_safe_url(url: &str) -> bool {
     let trimmed = url.trim_start().to_ascii_lowercase();
     !trimmed.starts_with("javascript:")
         && !trimmed.starts_with("vbscript:")
-        && !trimmed.starts_with("data:text/html")
+        && !trimmed.starts_with("data:")
 }
 
 /// Walks a link node: `<a href="url" title="...">...</a>`.
-/// Strips dangerous URL schemes (javascript:, vbscript:, data:text/html)
+/// Strips dangerous URL schemes (javascript:, vbscript:, data:)
 /// to prevent XSS — renders link text as a `<span>` without href.
 fn walk_link(link: &markdown::mdast::Link) -> Node {
     if !is_safe_url(&link.url) {
@@ -160,7 +162,7 @@ fn walk_link(link: &markdown::mdast::Link) -> Node {
 }
 
 /// Walks an image node: `<img src="url" alt="alt" title="...">`.
-/// Strips dangerous URL schemes (javascript:, vbscript:, data:text/html)
+/// Strips dangerous URL schemes (javascript:, vbscript:, data:)
 /// to prevent XSS — renders alt text only without src.
 fn walk_image(image: &markdown::mdast::Image) -> Node {
     if !is_safe_url(&image.url) {
@@ -175,8 +177,7 @@ fn walk_image(image: &markdown::mdast::Image) -> Node {
         attrs.push(create_attribute("title", title));
     }
     let attributes = with_attributes(attrs);
-    Node::Element(Box::new(void_element_with_attrs("img", attributes))
-    )
+    Node::Element(Box::new(void_element_with_attrs("img", attributes)))
 }
 
 /// Walks a fenced code block: `<pre><code class="language-{lang}">...</code></pre>`.
@@ -650,6 +651,79 @@ mod tests {
         assert!(result.is_ok());
         let view = result.unwrap();
         assert!(!view.nodes.is_empty());
+    }
+
+    // ---- Tests: URL sanitization (is_safe_url) ----
+
+    #[test]
+    fn is_safe_url_allows_http() {
+        assert!(is_safe_url("https://example.com"));
+        assert!(is_safe_url("http://example.com"));
+    }
+
+    #[test]
+    fn is_safe_url_allows_relative() {
+        assert!(is_safe_url("/path/to/page"));
+        assert!(is_safe_url("image.png"));
+        assert!(is_safe_url("./relative.md"));
+    }
+
+    #[test]
+    fn is_safe_url_blocks_javascript() {
+        assert!(!is_safe_url("javascript:alert(1)"));
+        assert!(!is_safe_url("  javascript:alert(1)"));
+        assert!(!is_safe_url("JavaScript:alert(1)"));
+    }
+
+    #[test]
+    fn is_safe_url_blocks_vbscript() {
+        assert!(!is_safe_url("vbscript:msgBox(1)"));
+    }
+
+    #[test]
+    fn is_safe_url_blocks_all_data_uris() {
+        // Block data:text/html
+        assert!(!is_safe_url("data:text/html,<script>alert(1)</script>"));
+        // Block data:image/svg+xml (XSS via SVG event handlers)
+        assert!(!is_safe_url("data:image/svg+xml,<svg onload=alert(1)>"));
+        // Block base64-encoded SVG
+        assert!(!is_safe_url("data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ+"));
+        // Block data:text/plain (defense in depth)
+        assert!(!is_safe_url("data:text/plain,hello"));
+    }
+
+    #[test]
+    fn blocks_javascript_url_in_link() {
+        let nodes = parse_and_walk("[click](javascript:alert(1))");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            // The link should NOT render as <a>; it should be stripped to <span>.
+            let has_a = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("a")
+                } else {
+                    false
+                }
+            });
+            assert!(!has_a, "javascript: link should NOT produce <a> element");
+        }
+    }
+
+    #[test]
+    fn blocks_data_uri_in_image() {
+        let nodes = parse_and_walk("![x](data:image/svg+xml,<svg onload=alert(1)>)");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(!has_img, "data: URI image should NOT produce <img> element");
+        }
     }
 
     // ---- New tests: links and images ----
