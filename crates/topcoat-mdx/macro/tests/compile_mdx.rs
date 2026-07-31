@@ -1,5 +1,4 @@
-use topcoat::compile_mdx;
-use topcoat::context::CxTestBuilder;
+use topcoat::{compile_mdx, context::CxTestBuilder};
 
 // ---- Tracer fixture (from Plan 01) ----
 
@@ -15,8 +14,7 @@ async fn tracer_renders() {
     // unescaped, and includes mixed content (markdown + raw HTML).
     // (Consolidated from tracer_compiles + tracer_raw_html_passthrough +
     // partially overlapping raw_html_renders_unescaped per IN-01.)
-    let view = compile_mdx!("tests/fixtures/tracer.mdx")
-        .expect("view should render successfully");
+    let view = compile_mdx!("tests/fixtures/tracer.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
@@ -42,8 +40,8 @@ async fn commonmark_compiles() {
 
 #[tokio::test]
 async fn commonmark_renders() {
-    let view = compile_mdx!("tests/fixtures/commonmark.mdx")
-        .expect("view should render successfully");
+    let view =
+        compile_mdx!("tests/fixtures/commonmark.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
@@ -114,8 +112,7 @@ async fn gfm_compiles() {
 
 #[tokio::test]
 async fn gfm_renders() {
-    let view = compile_mdx!("tests/fixtures/gfm.mdx")
-        .expect("view should render successfully");
+    let view = compile_mdx!("tests/fixtures/gfm.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
@@ -166,8 +163,8 @@ async fn raw_html_compiles() {
 
 #[tokio::test]
 async fn raw_html_renders_unescaped() {
-    let view = compile_mdx!("tests/fixtures/raw_html.mdx")
-        .expect("view should render successfully");
+    let view =
+        compile_mdx!("tests/fixtures/raw_html.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 

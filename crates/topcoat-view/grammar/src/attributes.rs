@@ -55,7 +55,10 @@ impl Attributes {
 
 impl Default for Attributes {
     fn default() -> Self {
-        Self { cx: None, items: Vec::new() }
+        Self {
+            cx: None,
+            items: Vec::new(),
+        }
     }
 }
 
