@@ -114,6 +114,7 @@ mail-smtp = [
 	"topcoat-mail/smtp",
 ]
 mdx = [
+	"dep:topcoat-mdx",
 	"dep:topcoat-mdx-macro",
 ]
 multipart = [
@@ -185,6 +186,7 @@ topcoat-icon = { workspace = true, optional = true }
 topcoat-icon-macro = { workspace = true, optional = true }
 topcoat-mail = { workspace = true, optional = true }
 topcoat-mail-macro = { workspace = true, optional = true }
+topcoat-mdx = { workspace = true, optional = true }
 topcoat-mdx-macro = { workspace = true, optional = true }
 topcoat-router = { workspace = true, optional = true }
 topcoat-router-macro = { workspace = true, optional = true }

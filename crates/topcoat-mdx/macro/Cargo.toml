@@ -26,7 +26,10 @@ syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
 topcoat = { workspace = true, features = ["mdx", "view"] }
+topcoat-mdx-grammar.workspace = true
+topcoat-view-grammar.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
+markdown = "1.0"
 
 [lints]
 workspace = true
