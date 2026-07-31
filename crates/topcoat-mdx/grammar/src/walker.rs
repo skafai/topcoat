@@ -7,10 +7,13 @@
 use std::cell::RefCell;
 
 use proc_macro2::Span;
-use syn::{Expr, Ident, LitStr, Path, parse_quote};
+use syn::{Expr, Ident, LitStr, Path, parse_quote, token::{Colon, Paren}};
 use topcoat_view_grammar::{
     attributes::{Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes},
-    view::*,
+    view::{
+        ClosingTag, Component, Element, ElementName, HtmlIdent, NamedArg, NamedArgValue, Node, Nodes,
+        OpeningTag, SelfClosingTag, View,
+    },
 };
 use topcoat_view_grammar::view::hir::{LowerView, ViewBuilder};
 
@@ -28,6 +31,7 @@ pub struct WalkContext<'a> {
 
 impl<'a> WalkContext<'a> {
     /// Create a new walk context with the given component registry.
+    #[must_use]
     pub fn new(components: &'a [(String, Path)]) -> Self {
         Self {
             components,
@@ -36,6 +40,7 @@ impl<'a> WalkContext<'a> {
     }
 
     /// Create an empty-context walker (no component registry).
+    #[must_use]
     pub fn empty() -> Self {
         Self::new(&[])
     }
@@ -57,7 +62,9 @@ impl Default for WalkContext<'_> {
 /// (they require `walk_to_writer` which has access to `ViewBuilder`'s
 /// unescaped output). Use `compile_mdx!` for HTML passthrough support.
 ///
-/// Returns `Err` if the markdown parser fails, rather than panicking.
+/// # Errors
+///
+/// Returns `Err(markdown::message::Message)` if the markdown parser fails.
 pub fn mdx_to_view(
     ctx: &WalkContext,
     mdx_content: &str,
@@ -117,8 +124,12 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Image(i) => vec![walk_image(i)],
         // Raw HTML cannot be represented in the view! AST without a
         // ViewBuilder (which supports str_unescaped). Use
-        // walk_to_writer for HTML passthrough.
-        markdown::mdast::Node::Html(_) => Vec::new(),
+        // walk_to_writer for HTML passthrough. It returns Vec::new() like
+        // the wildcard arm, which is intentional: Html nodes are skipped
+        // here and handled by walk_to_writer instead.
+        #[allow(clippy::match_same_arms)]
+        markdown::mdast::Node::Html(_)
+        | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
         markdown::mdast::Node::Code(c) => vec![walk_code_block(c)],
         markdown::mdast::Node::List(l) => vec![walk_list(ctx, l)],
         markdown::mdast::Node::ListItem(li) => vec![walk_list_item(ctx, li)],
@@ -266,17 +277,19 @@ fn walk_list_item(ctx: &WalkContext, item: &markdown::mdast::ListItem) -> Node {
     if let Some(checked) = &item.checked {
         if *checked {
             // <input type="checkbox" checked disabled />
-            let mut input_attrs = Vec::with_capacity(3);
-            input_attrs.push(create_attribute("type", "checkbox"));
-            input_attrs.push(create_attribute_bool("checked"));
-            input_attrs.push(create_attribute("disabled", ""));
+            let input_attrs = vec![
+                create_attribute("type", "checkbox"),
+                create_attribute_bool("checked"),
+                create_attribute("disabled", ""),
+            ];
             let input_el = self_closing_element("input", with_attributes(input_attrs));
             children.push(Node::Element(Box::new(input_el)));
         } else {
             // <input type="checkbox" disabled /> — no checked attribute
-            let mut input_attrs = Vec::with_capacity(2);
-            input_attrs.push(create_attribute("type", "checkbox"));
-            input_attrs.push(create_attribute("disabled", ""));
+            let input_attrs = vec![
+                create_attribute("type", "checkbox"),
+                create_attribute("disabled", ""),
+            ];
             let input_el = self_closing_element("input", with_attributes(input_attrs));
             children.push(Node::Element(Box::new(input_el)));
         }
@@ -405,6 +418,7 @@ fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -> Node {
 /// pure floats -> `LitFloat`, everything else -> `LitStr`.
 /// Leading-zero digit strings (e.g. `"007"`) stay as strings because
 /// `syn::LitInt` rejects them.
+#[must_use]
 pub fn coerce_attr_value(value: &str) -> Expr {
     match value {
         "true" => return syn::parse_quote!(true),
@@ -413,14 +427,13 @@ pub fn coerce_attr_value(value: &str) -> Expr {
     }
     // Try integer — but reject leading-zero strings like "007" (syn 2.0
     // accepts them as valid LitInt values, so we guard manually).
-    let has_leading_zeros = value.len() > 1 && value.starts_with('0');
-    if !has_leading_zeros {
-        if let Ok(lit) = syn::parse_str::<syn::LitInt>(value) {
-            return Expr::Lit(syn::ExprLit {
-                attrs: vec![],
-                lit: syn::Lit::Int(lit),
-            });
-        }
+    if !(value.len() > 1 && value.starts_with('0'))
+        && let Ok(lit) = syn::parse_str::<syn::LitInt>(value)
+    {
+        return Expr::Lit(syn::ExprLit {
+            attrs: vec![],
+            lit: syn::Lit::Int(lit),
+        });
     }
     // Try float.
     if let Ok(lit) = syn::parse_str::<syn::LitFloat>(value) {
@@ -472,7 +485,7 @@ fn walk_jsx_attributes(
                 };
                 Some(NamedArg {
                     ident: make_ident(&attr.name),
-                    colon: Default::default(),
+                    colon: Colon::default(),
                     value: NamedArgValue::Expr(value),
                 })
             }
@@ -489,11 +502,11 @@ fn walk_jsx_attributes(
 
 /// Walk a flow-level JSX element (`MdxJsxFlowElement`) into `Option<Node::Component>`.
 ///
-/// Returns `Some` when the element name is PascalCase AND registered in
+/// Returns `Some` when the element name is `PascalCase` and registered in
 /// `ctx.components`. Returns `None` for:
 /// - Lowercase names (HTML elements, not components — Pitfall 2).
 /// - Fragments (`name: None` — Pitfall 8).
-/// - Unregistered PascalCase names (pushes error to `ctx.errors` — D-04).
+/// - Unregistered `PascalCase` names (pushes error to `ctx.errors` — D-04).
 pub fn walk_jsx_element(
     ctx: &WalkContext,
     element: &markdown::mdast::MdxJsxFlowElement,
@@ -502,24 +515,16 @@ pub fn walk_jsx_element(
     // Fragments (name: None) handled by the `?` above — Pitfall 8.
 
     // Lowercase = HTML element, not a component — Pitfall 2.
-    if !name.chars().next().map_or(false, char::is_uppercase) {
+    if !name.starts_with(char::is_uppercase) {
         return None;
     }
 
     // Look up in component registry — D-04.
-    let path = match ctx
-        .components
-        .iter()
-        .find(|(tag, _)| tag == name)
-        .map(|(_, p)| p.clone())
-    {
-        Some(path) => path,
-        None => {
-            ctx.errors
-                .borrow_mut()
-                .push(format!("unknown component '{}'", name));
-            return None;
-        }
+    let path = if let Some((_, p)) = ctx.components.iter().find(|(tag, _)| tag == name) {
+        p.clone()
+    } else {
+        ctx.errors.borrow_mut().push(format!("unknown component '{name}'"));
+        return None;
     };
 
     let named_args = walk_jsx_attributes(ctx, &element.attributes);
@@ -527,7 +532,7 @@ pub fn walk_jsx_element(
 
     Some(Node::Component(Component {
         path,
-        paren_token: Default::default(),
+        paren_token: Paren::default(),
         named_args,
         children,
     }))
@@ -543,7 +548,7 @@ pub fn walk_jsx_text_element(
 ) -> Option<Node> {
     let name = element.name.as_deref()?;
 
-    if !name.chars().next().map_or(false, char::is_uppercase) {
+    if !name.starts_with(char::is_uppercase) {
         return None;
     }
 
@@ -558,7 +563,7 @@ pub fn walk_jsx_text_element(
 
     Some(Node::Component(Component {
         path,
-        paren_token: Default::default(),
+        paren_token: Paren::default(),
         named_args,
         children,
     }))
