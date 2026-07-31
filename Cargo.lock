@@ -3184,7 +3184,6 @@ dependencies = [
  "heck",
  "ignore",
  "markdown",
- "proc-macro-crate",
  "proc-macro2",
  "quote",
  "serde",

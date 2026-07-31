@@ -490,6 +490,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
     // Emit the page registration.
     quote! {
+        #[allow(clippy::needless_question_mark, clippy::approx_constant)]
         const _: () = {
             #fm_const_and_insert
 
@@ -619,6 +620,7 @@ fn generate_page_registration(
     let route_path_lit = LitStr::new(route_path, span);
 
     Ok(quote! {
+        #[allow(clippy::needless_question_mark, clippy::approx_constant)]
         const _: () = {
             fn #render_fn_name(
                 cx: &#topcoat_context::Cx,
@@ -884,6 +886,7 @@ fn make_lit_float(repr: &str, _span: Span) -> syn::Expr {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
