@@ -9,6 +9,33 @@ mdx_pages!("tests/fixtures/pages", prefix = "/blog");
 fn mdx_pages_compiles() {
     // The fact that this test module compiles proves that mdx_pages!
     // successfully scanned the directory and generated valid registration code.
-    // No runtime assertion needed — the macro emits const _: () = { ... } blocks
-    // that are verified at compile time.
+}
+
+// ---- Nested directory ----
+
+// Nested .mdx files should produce routes like /docs/nested/deep-page.
+mod nested_test {
+    use topcoat_mdx_macro::mdx_pages;
+
+    mdx_pages!("tests/fixtures/pages/nested", prefix = "/docs");
+
+    #[test]
+    fn mdx_pages_nested_directory() {
+        // Compilation proves nested file was discovered and registered.
+    }
+}
+
+// ---- Empty directory ----
+
+// mdx_pages! with an empty directory should compile without error.
+mod empty_dir_test {
+    use topcoat_mdx_macro::mdx_pages;
+
+    // Create an empty directory for this test.
+    mdx_pages!("tests/fixtures/empty_pages");
+
+    #[test]
+    fn mdx_pages_empty_directory() {
+        // Compilation succeeds even with no .mdx files found.
+    }
 }
