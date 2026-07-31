@@ -16,14 +16,14 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{Ident, LitStr, Path as SynPath, Token};
+use topcoat_core_grammar::paths::{
+    topcoat_context, topcoat_error, topcoat_inventory, topcoat_router, topcoat_view,
+};
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
     walker::{extract_frontmatter, walk_to_writer},
 };
 use topcoat_view_grammar::view::ViewWriter;
-use topcoat_core_grammar::paths::{
-    topcoat_context, topcoat_error, topcoat_inventory, topcoat_router, topcoat_view,
-};
 
 // ---------------------------------------------------------------------------
 // compile_mdx! input parsing
@@ -73,7 +73,10 @@ impl Parse for CompileMdxInput {
             let components = parse_component_braces(&content)?;
             input.parse::<Token![,]>()?;
             let lit_str: LitStr = input.parse()?;
-            return Ok(Self::TwoArgs { components, lit_str });
+            return Ok(Self::TwoArgs {
+                components,
+                lit_str,
+            });
         }
 
         // Pattern 2: mdx_components!{ Ident => Path, ... }, "path.mdx"
@@ -92,7 +95,10 @@ impl Parse for CompileMdxInput {
                 let components = parse_component_braces(&content)?;
                 input.parse::<Token![,]>()?;
                 let lit_str: LitStr = input.parse()?;
-                return Ok(Self::TwoArgs { components, lit_str });
+                return Ok(Self::TwoArgs {
+                    components,
+                    lit_str,
+                });
             }
         }
 
@@ -190,8 +196,8 @@ struct CompiledMdxResult {
 
 /// Shared inner logic: parse markdown content, extract frontmatter, walk mdast.
 ///
-/// Used by both `compile_mdx_file` (compile_mdx!, mdx_page!) and
-/// `generate_page_registration` (mdx_pages!). The `label` parameter controls
+/// Used by both [`compile_mdx_file`] (`compile_mdx!`, `mdx_page!`) and
+/// [`generate_page_registration`] (`mdx_pages!`). The `label` parameter controls
 /// the prefix in error messages.
 fn parse_and_walk_mdx(
     components: &[(String, SynPath)],
@@ -201,9 +207,8 @@ fn parse_and_walk_mdx(
 ) -> Result<CompiledMdxResult, syn::Error> {
     // Parse with markdown-rs.
     let options = get_parse_options();
-    let root = markdown::to_mdast(content, &options).map_err(|e| {
-        syn::Error::new(span, format!("{label} parse error: {e}"))
-    })?;
+    let root = markdown::to_mdast(content, &options)
+        .map_err(|e| syn::Error::new(span, format!("{label} parse error: {e}")))?;
 
     // Extract frontmatter from root node.
     let frontmatter_yaml = extract_frontmatter(&root);
@@ -242,8 +247,7 @@ fn compile_mdx_file(
     path_str: &str,
     span: Span,
 ) -> Result<CompiledMdxResult, syn::Error> {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
     let resolved = Path::new(&manifest_dir).join(path_str);
 
     // Security: verify resolved path stays within manifest directory (T-01-01).
@@ -319,7 +323,9 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<CompileMdxInput>(tokens) {
         Ok(i) => i,
         Err(e) => {
-            let msg = format!("compile_mdx! expects a string literal path, optionally preceded by a component registry: {e}");
+            let msg = format!(
+                "compile_mdx! expects a string literal path, optionally preceded by a component registry: {e}"
+            );
             return syn::Error::new(Span::call_site(), msg)
                 .to_compile_error()
                 .into();
@@ -327,7 +333,10 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     };
 
     let (components, lit_str) = match input {
-        CompileMdxInput::TwoArgs { components, lit_str } => (components, lit_str),
+        CompileMdxInput::TwoArgs {
+            components,
+            lit_str,
+        } => (components, lit_str),
         CompileMdxInput::OneArg { lit_str } => (Vec::new(), lit_str),
     };
 
@@ -402,9 +411,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         Err(e) => {
             return syn::Error::new(
                 Span::call_site(),
-                format!(
-                    "mdx_page! expects: route_path, file_path [, frontmatter = Type]: {e}"
-                ),
+                format!("mdx_page! expects: route_path, file_path [, frontmatter = Type]: {e}"),
             )
             .to_compile_error()
             .into();
@@ -431,47 +438,45 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let unit_name = Ident::new(&format!("__mdx_page_{file_stem}"), file_path.span());
 
     // Frontmatter const + extension insertion.
-    let fm_const_and_insert = if let (Some(yaml), Some(fm_type)) =
-        (&result.frontmatter_yaml, &input.frontmatter_type)
-    {
-        let fm_const_name = Ident::new(
-            &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
-            file_path.span(),
-        );
+    let fm_const_and_insert =
+        if let (Some(yaml), Some(fm_type)) = (&result.frontmatter_yaml, &input.frontmatter_type) {
+            let fm_const_name = Ident::new(
+                &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
+                file_path.span(),
+            );
 
-        // Deserialize YAML at compile time into serde_value::Value, then
-        // convert to a syn::Expr of the target type.
-        let deserialized = match serde_saphyr::from_str::<serde_value::Value>(yaml) {
-            Ok(v) => v,
-            Err(e) => {
-                return syn::Error::new(
-                    file_path.span(),
-                    format!("mdx_page! failed to deserialize frontmatter YAML: {e}"),
-                )
-                .to_compile_error()
-                .into();
-            }
-        };
+            // Deserialize YAML at compile time into serde_value::Value, then
+            // convert to a syn::Expr of the target type.
+            let deserialized = match serde_saphyr::from_str::<serde_value::Value>(yaml) {
+                Ok(v) => v,
+                Err(e) => {
+                    return syn::Error::new(
+                        file_path.span(),
+                        format!("mdx_page! failed to deserialize frontmatter YAML: {e}"),
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+            };
 
-        match value_to_expr(&deserialized, Some(&fm_type), file_path.span()) {
-            Ok(expr) => {
-                // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
-                // for Map values since `root_type` was provided.
-                quote! {
-                    const #fm_const_name: #fm_type = #expr;
+            match value_to_expr(&deserialized, Some(fm_type), file_path.span()) {
+                Ok(expr) => {
+                    // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
+                    // for Map values since `root_type` was provided.
+                    quote! {
+                        #[allow(clippy::approx_constant)]
+                        const #fm_const_name: #fm_type = #expr;
+                    }
+                }
+                Err(e) => {
+                    return e.to_compile_error().into();
                 }
             }
-            Err(e) => {
-                return e.to_compile_error().into();
-            }
-        }
-    } else {
-        quote! {}
-    };
+        } else {
+            quote! {}
+        };
 
-    let fm_insert = if result.frontmatter_yaml.is_some()
-        && input.frontmatter_type.is_some()
-    {
+    let fm_insert = if result.frontmatter_yaml.is_some() && input.frontmatter_type.is_some() {
         let fm_const_name = Ident::new(
             &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
             file_path.span(),
@@ -530,11 +535,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 /// Given the scan directory, the resolved file path, and an optional prefix,
 /// computes the route path: applies the prefix, then appends the relative
 /// directory structure and kebab-cased filename stem.
-fn derive_route_path(
-    scan_dir: &Path,
-    file_path: &Path,
-    prefix: Option<&str>,
-) -> String {
+fn derive_route_path(scan_dir: &Path, file_path: &Path, prefix: Option<&str>) -> String {
     let relative = file_path
         .strip_prefix(scan_dir)
         .unwrap_or(file_path)
@@ -542,7 +543,10 @@ fn derive_route_path(
 
     // Remove .mdx or .md extension.
     let mut route = relative.into_owned();
-    if let Some(ext) = std::path::Path::new(&route).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(&route)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         if ext.eq_ignore_ascii_case("mdx") {
             route.truncate(route.len() - 4);
         } else if ext.eq_ignore_ascii_case("md") {
@@ -561,7 +565,7 @@ fn derive_route_path(
 
     let mut path_parts: Vec<String> = Vec::new();
     if let Some(dir) = dir_part {
-        let kebab_dir: Vec<String> = dir.split('/').map(|seg| seg.to_kebab_case()).collect();
+        let kebab_dir: Vec<String> = dir.split('/').map(str::to_kebab_case).collect();
         path_parts.push(kebab_dir.join("/"));
     }
     path_parts.push(kebab_stem);
@@ -599,7 +603,7 @@ fn generate_page_registration(
     })?;
 
     let CompiledMdxResult { view_tokens, .. } =
-        parse_and_walk_mdx(&[], &content, &format!("mdx_pages!"), span)?;
+        parse_and_walk_mdx(&[], &content, "mdx_pages!", span)?;
 
     // Generate unique identifiers from file stem.
     // Use snake_case for identifiers (valid Rust) but the route path
@@ -675,9 +679,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         Err(e) => {
             return syn::Error::new(
                 Span::call_site(),
-                format!(
-                    "mdx_pages! expects: directory_path [, prefix = \"/path\"]: {e}"
-                ),
+                format!("mdx_pages! expects: directory_path [, prefix = \"/path\"]: {e}"),
             )
             .to_compile_error()
             .into();
@@ -686,15 +688,17 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
 
     let dir_str = input.directory_path.value();
     let span = input.directory_path.span();
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
     let scan_dir = Path::new(&manifest_dir).join(&dir_str);
 
     // Validate scan directory exists.
     if !scan_dir.is_dir() {
         return syn::Error::new(
             span,
-            format!("mdx_pages! directory '{dir_str}' does not exist (resolved: {})", scan_dir.display()),
+            format!(
+                "mdx_pages! directory '{dir_str}' does not exist (resolved: {})",
+                scan_dir.display()
+            ),
         )
         .to_compile_error()
         .into();
@@ -731,13 +735,10 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     // Use ignore::Walk to find all .mdx files, respecting .gitignore.
     let mut results = Vec::new();
     for entry in ignore::Walk::new(&canonical_scan_dir) {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => {
-                // Skip entries that cannot be read (e.g., permission errors).
-                // These are non-fatal — just log and continue.
-                continue;
-            }
+        let Ok(entry) = entry else {
+            // Skip entries that cannot be read (e.g., permission errors).
+            // These are non-fatal — just log and continue.
+            continue;
         };
 
         let file_path = entry.path();
@@ -798,58 +799,26 @@ fn value_to_expr(
     span: Span,
 ) -> Result<syn::Expr, syn::Error> {
     match value {
-        serde_value::Value::Bool(b) => {
-            Ok(syn::parse_quote! { #b })
-        }
-        serde_value::Value::I8(n) => {
-            Ok(make_lit_int(&format!("{n}i8"), span))
-        }
-        serde_value::Value::I16(n) => {
-            Ok(make_lit_int(&format!("{n}i16"), span))
-        }
-        serde_value::Value::I32(n) => {
-            Ok(make_lit_int(&format!("{n}i32"), span))
-        }
-        serde_value::Value::I64(n) => {
-            Ok(make_lit_int(&format!("{n}i64"), span))
-        }
-        serde_value::Value::U8(n) => {
-            Ok(make_lit_int(&format!("{n}u8"), span))
-        }
-        serde_value::Value::U16(n) => {
-            Ok(make_lit_int(&format!("{n}u16"), span))
-        }
-        serde_value::Value::U32(n) => {
-            Ok(make_lit_int(&format!("{n}u32"), span))
-        }
-        serde_value::Value::U64(n) => {
-            Ok(make_lit_int(&format!("{n}u64"), span))
-        }
-        serde_value::Value::F32(n) => {
-            Ok(make_lit_float(&format!("{n:?}f32"), span))
-        }
-        serde_value::Value::F64(n) => {
-            Ok(make_lit_float(&format!("{n:?}f64"), span))
-        }
-        serde_value::Value::Char(c) => {
-            Ok(syn::parse_quote! { #c })
-        }
-        serde_value::Value::String(s) => {
-            Ok(syn::parse_quote! { #s })
-        }
-        serde_value::Value::Unit => {
-            Ok(syn::parse_quote! { () })
-        }
-        serde_value::Value::Option(None) => {
-            Ok(syn::parse_quote! { None })
-        }
+        serde_value::Value::Bool(b) => Ok(syn::parse_quote! { #b }),
+        serde_value::Value::I8(n) => Ok(make_lit_int(&format!("{n}i8"), span)),
+        serde_value::Value::I16(n) => Ok(make_lit_int(&format!("{n}i16"), span)),
+        serde_value::Value::I32(n) => Ok(make_lit_int(&format!("{n}i32"), span)),
+        serde_value::Value::I64(n) => Ok(make_lit_int(&format!("{n}i64"), span)),
+        serde_value::Value::U8(n) => Ok(make_lit_int(&format!("{n}u8"), span)),
+        serde_value::Value::U16(n) => Ok(make_lit_int(&format!("{n}u16"), span)),
+        serde_value::Value::U32(n) => Ok(make_lit_int(&format!("{n}u32"), span)),
+        serde_value::Value::U64(n) => Ok(make_lit_int(&format!("{n}u64"), span)),
+        serde_value::Value::F32(n) => Ok(make_lit_float(&format!("{n:?}f32"), span)),
+        serde_value::Value::F64(n) => Ok(make_lit_float(&format!("{n:?}f64"), span)),
+        serde_value::Value::Char(c) => Ok(syn::parse_quote! { #c }),
+        serde_value::Value::String(s) => Ok(syn::parse_quote! { #s }),
+        serde_value::Value::Unit => Ok(syn::parse_quote! { () }),
+        serde_value::Value::Option(None) => Ok(syn::parse_quote! { None }),
         serde_value::Value::Option(Some(inner)) => {
             let inner_expr = value_to_expr(inner, None, span)?;
             Ok(syn::parse_quote! { Some(#inner_expr) })
         }
-        serde_value::Value::Newtype(inner) => {
-            value_to_expr(inner, None, span)
-        }
+        serde_value::Value::Newtype(inner) => value_to_expr(inner, None, span),
         serde_value::Value::Seq(items) => {
             let exprs: Result<Vec<syn::Expr>, syn::Error> =
                 items.iter().map(|v| value_to_expr(v, None, span)).collect();
@@ -871,7 +840,7 @@ fn value_to_expr(
                 named_fields.push(syn::FieldValue {
                     attrs: vec![],
                     member: syn::Member::Named(field_ident),
-                    colon_token: Some(Default::default()),
+                    colon_token: Some(syn::token::Colon::default()),
                     expr: field_expr,
                 });
             }
@@ -893,7 +862,8 @@ fn value_to_expr(
         }
         serde_value::Value::Bytes(b) => {
             // Bytes in frontmatter are unusual; encode as a vec of u8 values.
-            let bytes: Vec<syn::Expr> = b.iter()
+            let bytes: Vec<syn::Expr> = b
+                .iter()
                 .map(|v| make_lit_int(&format!("{v}u8"), span))
                 .collect();
             Ok(syn::parse_quote! { vec![#(#bytes),*] })
@@ -930,13 +900,17 @@ mod tests {
     #[test]
     fn value_to_expr_bool_true() {
         let expr = v2e(&serde_value::Value::Bool(true)).unwrap();
-        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if b.value()));
+        assert!(
+            matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if b.value())
+        );
     }
 
     #[test]
     fn value_to_expr_bool_false() {
         let expr = v2e(&serde_value::Value::Bool(false)).unwrap();
-        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if !b.value()));
+        assert!(
+            matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if !b.value())
+        );
     }
 
     #[test]
@@ -971,19 +945,33 @@ mod tests {
     #[test]
     fn value_to_expr_string() {
         let expr = v2e(&serde_value::Value::String("hello".to_string())).unwrap();
-        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(_), .. })));
+        assert!(matches!(
+            expr,
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(_),
+                ..
+            })
+        ));
     }
 
     #[test]
     fn value_to_expr_char() {
         let expr = v2e(&serde_value::Value::Char('X')).unwrap();
-        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Char(_), .. })));
+        assert!(matches!(
+            expr,
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Char(_),
+                ..
+            })
+        ));
     }
 
     #[test]
     fn value_to_expr_option_none() {
         let expr = v2e(&serde_value::Value::Option(None)).unwrap();
-        assert!(matches!(expr, syn::Expr::Path(p) if p.path.segments.last().unwrap().ident == "None"));
+        assert!(
+            matches!(expr, syn::Expr::Path(p) if p.path.segments.last().unwrap().ident == "None")
+        );
     }
 
     #[test]
@@ -1004,7 +992,10 @@ mod tests {
         ];
         let expr = v2e(&serde_value::Value::Seq(items)).unwrap();
         // Seq produces a macro invocation (vec![...]).
-        assert!(matches!(expr, syn::Expr::Macro(_)), "should produce a macro invocation");
+        assert!(
+            matches!(expr, syn::Expr::Macro(_)),
+            "should produce a macro invocation"
+        );
     }
 
     #[test]
@@ -1013,7 +1004,10 @@ mod tests {
             std::collections::BTreeMap::new();
         let expr = v2e(&serde_value::Value::Map(entries)).unwrap();
         // Empty map produces an ExprStruct with placeholder path.
-        assert!(matches!(expr, syn::Expr::Struct(_)), "should produce a struct expression");
+        assert!(
+            matches!(expr, syn::Expr::Struct(_)),
+            "should produce a struct expression"
+        );
     }
 
     #[test]
@@ -1039,12 +1033,17 @@ mod tests {
         let bytes = vec![72, 101, 108, 108, 111];
         let expr = v2e(&serde_value::Value::Bytes(bytes)).unwrap();
         // Bytes produces a macro invocation (vec![...]).
-        assert!(matches!(expr, syn::Expr::Macro(_)), "should produce a macro invocation");
+        assert!(
+            matches!(expr, syn::Expr::Macro(_)),
+            "should produce a macro invocation"
+        );
     }
 
     #[test]
     fn value_to_expr_nested_option() {
-        let inner = Box::new(serde_value::Value::Option(Some(Box::new(serde_value::Value::I32(42)))));
+        let inner = Box::new(serde_value::Value::Option(Some(Box::new(
+            serde_value::Value::I32(42),
+        ))));
         let expr = v2e(&serde_value::Value::Option(Some(inner))).unwrap();
         let s = quote! { #expr }.to_string();
         assert!(s.contains("Some"), "should contain Some");
