@@ -194,7 +194,7 @@ mod md_backward_compat {
     }
 }
 
-// --- Macro-level test: unknown component error propagation ---
+// --- Walker-level test: unknown component error propagation ---
 
 mod unknown_component_error {
     use std::path::Path;
@@ -202,10 +202,10 @@ mod unknown_component_error {
     use topcoat_view_grammar::view::ViewWriter;
 
     /// Tests that walking MDX content with an unknown PascalCase element
-    /// pushes an error into ctx.errors, which compile_mdx! would convert
-    /// into a syn::Error diagnostic.
+    /// pushes an error into ctx.errors. This is walker-level, not
+    /// macro-level — the compile_mdx! proc-macro is not exercised here.
     #[test]
-    fn walker_pushes_error_for_unknown_component() {
+    fn walker_reports_unknown_component() {
         // Parse MDX with an unregistered component.
         let content = r#"Before
 
@@ -237,12 +237,11 @@ After"#;
         );
     }
 
-    /// Tests that the compile_mdx! macro rejects unknown components
-    /// by actually compiling MDX through the macro pipeline.
-    /// This is a negative test -- we verify it fails at compile time
-    /// by constructing the walker path manually.
+    /// Tests that walking a fixture file with an unregistered component
+    /// pushes an error. This is walker-level, not macro-level — the
+    /// compile_mdx! proc-macro is not exercised here.
     #[test]
-    fn compile_mdx_rejects_unknown_component_via_macro() {
+    fn walker_reports_unknown_component_from_fixture() {
         // Create a temporary .mdx file with an unknown component.
         let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/components_unknown_test.mdx");
