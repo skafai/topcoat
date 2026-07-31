@@ -188,14 +188,16 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
                 Vec::new()
             }
         }
-        // Default: skip nodes not supported in this phase.
-        // Deferred (require additional infrastructure for Phase 02+):
+        // Default: skip remaining node types.
+        // Deferred (require additional infrastructure):
         // - LinkReference, ImageReference: need a definition registry to resolve [ref] targets
         // - Definition: reference-style link/image declarations
         // - FootnoteDefinition, FootnoteReference: footnote support
-        // Skipped (out of scope for markdown compilation):
-        // - Frontmatter (Yaml, Toml, MdxjsEsm): metadata, not rendered content
         // - MdxFlowExpression, MdxTextExpression: MDX expressions
+        // Handled elsewhere (not rendered by this walker):
+        // - Html: raw passthrough via walk_to_writer (line above)
+        // - Yaml, Toml: extracted by extract_frontmatter(), skipped in walker
+        // - MdxjsEsm: not rendered (JS expressions, not Rust-deserializable)
         // - InlineMath, Math: LaTeX math (not enabled in parse options)
         // - TableRow, TableCell: handled internally by walk_table
         _ => Vec::new(),
