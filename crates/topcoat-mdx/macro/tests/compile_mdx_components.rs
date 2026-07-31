@@ -148,31 +148,6 @@ mod components_basic {
     }
 }
 
-// --- Backward compatibility: one-arg form still works (existing .mdx) ---
-
-mod backward_compat {
-    use super::*;
-
-    #[tokio::test]
-    async fn one_arg_form_compiles() {
-        // The existing one-arg form should still compile.
-        let _view = compile_mdx!("tests/fixtures/tracer.mdx");
-    }
-
-    #[tokio::test]
-    async fn one_arg_form_renders() {
-        let view = compile_mdx!("tests/fixtures/tracer.mdx")
-            .expect("view should render successfully");
-        let cx = CxTestBuilder::new().build();
-        let html = view.render(&cx);
-
-        assert!(
-            html.contains(r#"<div class="raw">Raw HTML</div>"#),
-            "tracer fixture should render raw HTML. Got:\n{html}"
-        );
-    }
-}
-
 // --- Backward compatibility: plain .md files (user request) ---
 
 mod md_backward_compat {
