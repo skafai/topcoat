@@ -1,6 +1,6 @@
 use topcoat::{
-    compile_mdx,
     context::CxTestBuilder,
+    mdx::compile_mdx,
 };
 use topcoat::view as topcoat_view_module;
 use topcoat_view_module::{View, component, view};
