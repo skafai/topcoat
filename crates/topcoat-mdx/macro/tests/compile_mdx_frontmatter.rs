@@ -75,3 +75,15 @@ fn frontmatter_struct_matches_fixture() {
     assert_eq!(meta.date, "2024-01-01");
     assert_eq!(meta.tags.len(), 2);
 }
+
+// ---- .md file with frontmatter (IN-05) ----
+
+#[tokio::test]
+async fn compile_mdx_handles_md_extension_with_frontmatter() {
+    let view = compile_mdx!("tests/fixtures/frontmatter_md.md")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(html.contains("<h1>"), "body should render");
+    assert!(!html.contains("---"), "frontmatter should not render as content");
+}
