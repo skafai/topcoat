@@ -45,6 +45,9 @@ pub mod mail;
 #[cfg(feature = "mdx")]
 pub use topcoat_mdx_macro::compile_mdx;
 
+#[cfg(feature = "mdx")]
+pub use topcoat_mdx::mdx_components;
+
 #[cfg(feature = "router")]
 pub mod router;
 

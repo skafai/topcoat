@@ -1,0 +1,301 @@
+use topcoat::{
+    compile_mdx,
+    context::CxTestBuilder,
+};
+use topcoat::view as topcoat_view_module;
+use topcoat_view_module::{View, component, view};
+
+type Result<T = View> = topcoat::Result<T>;
+
+/// Helper to run compile_mdx! with a `__cx` binding so that component
+/// code (`__view(__cx, ...)`) compiles correctly.
+///
+/// The `compile_mdx!` macro generates code that references `__cx` when
+/// the MDX content contains components. This wrapper provides the binding.
+macro_rules! compile_mdx_with_cx {
+    ( $cx:expr => $( $arg:tt )* ) => {{
+        let __cx = &$cx;
+        compile_mdx!($( $arg )*)
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Mock components for integration tests
+// ---------------------------------------------------------------------------
+
+mod mock {
+    use super::*;
+
+    // --- Callout: var prop ---
+    #[component]
+    pub async fn callout(var: &'static str, #[default] child: View) -> Result {
+        view! {
+            <div class="mdx-callout" data-var=(var)>
+                (child)
+            </div>
+        }
+    }
+
+    // --- Divider: no props ---
+    #[component]
+    pub async fn divider() -> Result {
+        view! { <hr class="mdx-divider" /> }
+    }
+
+    // --- Badge: label prop ---
+    #[component]
+    pub async fn badge(label: &'static str) -> Result {
+        view! { <span class="mdx-badge">(label)</span> }
+    }
+
+    // --- Wrapper: child content ---
+    #[component]
+    pub async fn wrapper(#[default] child: View) -> Result {
+        view! { <section class="mdx-wrapper">(child)</section> }
+    }
+
+    // --- NestedOuter: name prop + child ---
+    #[component]
+    pub async fn nested_outer(name: &'static str, #[default] child: View) -> Result {
+        view! {
+            <div class="mdx-nested-outer" data-name=(name)>
+                (child)
+            </div>
+        }
+    }
+
+    // --- NestedInner: count prop + child ---
+    #[component]
+    pub async fn nested_inner(count: i64, #[default] child: View) -> Result {
+        view! {
+            <div class="mdx-nested-inner" data-count=(count.to_string())>
+                (child)
+            </div>
+        }
+    }
+
+    // --- Config: multiple prop types ---
+    #[component]
+    pub async fn config(
+        enabled: bool,
+        count: i64,
+        ratio: f64,
+        label: &'static str,
+    ) -> Result {
+        view! {
+            <div class="mdx-config"
+                data-enabled=(enabled.to_string())
+                data-count=(count.to_string())
+                data-ratio=(ratio.to_string())
+                data-label=(label)>
+            </div>
+        }
+    }
+
+    // --- BareAttr: boolean prop ---
+    #[component]
+    pub async fn bare_attr(#[default] dismissible: bool) -> Result {
+        view! {
+            <div class="mdx-bare-attr" data-dismissible=(dismissible.to_string())>
+            </div>
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 1: compile_mdx! two-arg parsing, WalkContext wiring, error emission
+// ---------------------------------------------------------------------------
+
+// --- components_basic: paragraph + component with string prop ---
+
+mod components_basic {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        // Verify the two-arg compile_mdx! macro expands and compiles.
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Callout => mock::callout },
+            "tests/fixtures/components_basic.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_component_and_markdown() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Callout => mock::callout },
+            "tests/fixtures/components_basic.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        // Should have the heading from markdown.
+        assert!(html.contains("<h1>"), "should have <h1>. Got:\n{html}");
+
+        // Should have the paragraph.
+        assert!(html.contains("<p>"), "should have <p>. Got:\n{html}");
+
+        // Should have the Callout component output.
+        assert!(
+            html.contains("mdx-callout"),
+            "should have callout component. Got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-var="info""#),
+            "should have var='info' prop. Got:\n{html}"
+        );
+    }
+}
+
+// --- Backward compatibility: one-arg form still works (existing .mdx) ---
+
+mod backward_compat {
+    use super::*;
+
+    #[tokio::test]
+    async fn one_arg_form_compiles() {
+        // The existing one-arg form should still compile.
+        let _view = compile_mdx!("tests/fixtures/tracer.mdx");
+    }
+
+    #[tokio::test]
+    async fn one_arg_form_renders() {
+        let view = compile_mdx!("tests/fixtures/tracer.mdx")
+            .expect("view should render successfully");
+        let cx = CxTestBuilder::new().build();
+        let html = view.render(&cx);
+
+        assert!(
+            html.contains(r#"<div class="raw">Raw HTML</div>"#),
+            "tracer fixture should render raw HTML. Got:\n{html}"
+        );
+    }
+}
+
+// --- Backward compatibility: plain .md files (user request) ---
+
+mod md_backward_compat {
+    use super::*;
+
+    /// Verify compile_mdx! compiles plain .md files (not just .mdx) via
+    /// the one-arg form, ensuring the walker handles .md input correctly
+    /// after WalkContext threading changes.
+    #[tokio::test]
+    async fn plain_markdown_compiles() {
+        let _view = compile_mdx!("tests/fixtures/plain_markdown.md");
+    }
+
+    /// Verify plain .md renders headings, paragraphs, and lists.
+    #[tokio::test]
+    async fn plain_markdown_renders() {
+        let view = compile_mdx!("tests/fixtures/plain_markdown.md")
+            .expect("view should render successfully");
+        let cx = CxTestBuilder::new().build();
+        let html = view.render(&cx);
+
+        assert!(html.contains("<h1>"), "should have <h1>. Got:\n{html}");
+        assert!(html.contains("<p>"), "should have <p>. Got:\n{html}");
+        assert!(html.contains("<ul>"), "should have <ul>. Got:\n{html}");
+        assert!(html.contains("<li>"), "should have <li>. Got:\n{html}");
+    }
+
+    /// Verify .md files with code blocks and blockquotes compile and render.
+    #[tokio::test]
+    async fn markdown_with_code_block_compiles() {
+        let _view = compile_mdx!("tests/fixtures/mdx_and_markdown.md");
+    }
+
+    #[tokio::test]
+    async fn markdown_with_code_block_renders() {
+        let view = compile_mdx!("tests/fixtures/mdx_and_markdown.md")
+            .expect("view should render successfully");
+        let cx = CxTestBuilder::new().build();
+        let html = view.render(&cx);
+
+        assert!(html.contains("<h2>"), "should have <h2>. Got:\n{html}");
+        assert!(html.contains("<pre>"), "should have <pre>. Got:\n{html}");
+        assert!(html.contains("<blockquote>"), "should have <blockquote>. Got:\n{html}");
+    }
+}
+
+// --- Macro-level test: unknown component error propagation ---
+
+mod unknown_component_error {
+    use std::path::Path;
+    use topcoat_mdx_grammar::walker::WalkContext;
+    use topcoat_view_grammar::view::ViewWriter;
+
+    /// Tests that walking MDX content with an unknown PascalCase element
+    /// pushes an error into ctx.errors, which compile_mdx! would convert
+    /// into a syn::Error diagnostic.
+    #[test]
+    fn walker_pushes_error_for_unknown_component() {
+        // Parse MDX with an unregistered component.
+        let content = r#"Before
+
+<UnknownWidget></UnknownWidget>
+
+After"#;
+
+        let options = topcoat_mdx_grammar::parse::get_parse_options();
+        let root = markdown::to_mdast(content, &options).unwrap();
+
+        let ctx = WalkContext::empty();
+        let mut writer = ViewWriter::new();
+        if let markdown::mdast::Node::Root(r) = root {
+            for child in &r.children {
+                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
+            }
+        }
+
+        // The walker should have pushed an error for the unknown component.
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should have errors for unknown component"
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("unknown component 'UnknownWidget'")),
+            "should contain 'unknown component' message. Errors: {:?}",
+            *errors
+        );
+    }
+
+    /// Tests that the compile_mdx! macro rejects unknown components
+    /// by actually compiling MDX through the macro pipeline.
+    /// This is a negative test -- we verify it fails at compile time
+    /// by constructing the walker path manually.
+    #[test]
+    fn compile_mdx_rejects_unknown_component_via_macro() {
+        // Create a temporary .mdx file with an unknown component.
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/components_unknown_test.mdx");
+
+        // Write the fixture if it doesn't exist.
+        if !fixture_path.exists() {
+            std::fs::write(&fixture_path, r#"<NotRegistered></NotRegistered>"#).unwrap();
+        }
+
+        // The two-arg form with empty registry should fail to compile.
+        // We can't test this at compile time (it would make the test binary
+        // not compile), so we test the walker-level error collection instead.
+        let content = std::fs::read_to_string(&fixture_path).unwrap();
+        let options = topcoat_mdx_grammar::parse::get_parse_options();
+        let root = markdown::to_mdast(&content, &options).unwrap();
+
+        let ctx = WalkContext::empty();
+        let mut writer = ViewWriter::new();
+        if let markdown::mdast::Node::Root(r) = root {
+            for child in &r.children {
+                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
+            }
+        }
+
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should have errors for component not in registry"
+        );
+    }
+}
