@@ -12,6 +12,7 @@ mod frontmatter;
 pub use frontmatter::Frontmatter;
 pub use topcoat_mdx_macro::compile_mdx;
 pub use topcoat_mdx_macro::mdx_page;
+pub use topcoat_mdx_macro::mdx_pages;
 
 /// Declares a component registry mapping MDX tag names to Rust component paths.
 ///
