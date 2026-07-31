@@ -2809,6 +2809,7 @@ dependencies = [
  "topcoat-icon-macro",
  "topcoat-mail",
  "topcoat-mail-macro",
+ "topcoat-mdx",
  "topcoat-mdx-macro",
  "topcoat-router",
  "topcoat-router-macro",
