@@ -21,7 +21,7 @@ use topcoat_core_grammar::paths::{
 };
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
-    walker::{extract_frontmatter, walk_to_writer, FrontmatterFormat},
+    walker::{FrontmatterFormat, extract_frontmatter, walk_to_writer},
 };
 use topcoat_view_grammar::view::ViewWriter;
 
@@ -443,48 +443,40 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let unit_name = Ident::new(&format!("__mdx_page_{file_stem}"), file_path.span());
 
     // Frontmatter const + extension insertion.
-    let fm_const_and_insert =
-        if let (Some((content, format)), Some(fm_type)) =
-            (&result.frontmatter_content, &input.frontmatter_type)
-        {
-            let fm_const_name = Ident::new(
-                &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
-                file_path.span(),
-            );
+    let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
+        (&result.frontmatter_content, &input.frontmatter_type)
+    {
+        let fm_const_name = Ident::new(
+            &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
+            file_path.span(),
+        );
 
-            // Deserialize frontmatter at compile time into serde_value::Value,
-            // dispatching on format (YAML via serde-saphyr, TOML via toml).
-            let deserialized: serde_value::Value =
-                if matches!(format, FrontmatterFormat::Yaml) {
-                    serde_saphyr::from_str(content).unwrap_or_else(|e| {
-                        panic!(
-                            "mdx_page! failed to deserialize frontmatter YAML: {e}"
-                        )
-                    })
-                } else {
-                    toml::from_str(content).unwrap_or_else(|e| {
-                        panic!(
-                            "mdx_page! failed to deserialize frontmatter TOML: {e}"
-                        )
-                    })
-                };
+        // Deserialize frontmatter at compile time into serde_value::Value,
+        // dispatching on format (YAML via serde-saphyr, TOML via toml).
+        let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
+            serde_saphyr::from_str(content)
+                .unwrap_or_else(|e| panic!("mdx_page! failed to deserialize frontmatter YAML: {e}"))
+        } else {
+            toml::from_str(content)
+                .unwrap_or_else(|e| panic!("mdx_page! failed to deserialize frontmatter TOML: {e}"))
+        };
 
-            match value_to_expr(&deserialized, Some(fm_type), file_path.span()) {
-                Ok(expr) => {
-                    // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
-                    // for Map values since `root_type` was provided.
-                    quote! {
-                        #[allow(clippy::approx_constant)]
-                        const #fm_const_name: #fm_type = #expr;
-                    }
-                }
-                Err(e) => {
-                    return e.to_compile_error().into();
+        match value_to_expr(&deserialized, Some(fm_type), file_path.span()) {
+            Ok(expr) => {
+                // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
+                // for Map values since `root_type` was provided.
+                quote! {
+                    #[allow(clippy::approx_constant)]
+                    const #fm_const_name: #fm_type = #expr;
                 }
             }
-        } else {
-            quote! {}
-        };
+            Err(e) => {
+                return e.to_compile_error().into();
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let fm_insert = if result.frontmatter_content.is_some() && input.frontmatter_type.is_some() {
         let fm_const_name = Ident::new(
