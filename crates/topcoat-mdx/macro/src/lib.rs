@@ -838,10 +838,10 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
             Ok(make_lit_int(&format!("{n}u64"), span))
         }
         serde_value::Value::F32(n) => {
-            Ok(make_lit_float(&format!("{n:.1}f32"), span))
+            Ok(make_lit_float(&format!("{n:?}f32"), span))
         }
         serde_value::Value::F64(n) => {
-            Ok(make_lit_float(&format!("{n:.1}f64"), span))
+            Ok(make_lit_float(&format!("{n:?}f64"), span))
         }
         serde_value::Value::Char(c) => {
             Ok(syn::parse_quote! { #c })
