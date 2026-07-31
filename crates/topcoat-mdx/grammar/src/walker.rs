@@ -177,7 +177,14 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
 pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, builder: &mut ViewBuilder) {
     match node {
         markdown::mdast::Node::Html(h) => {
-            // Raw HTML passthrough — trusted author content, build-time only.
+            // Raw HTML passthrough.
+            //
+            // Security model: MDX files are trusted source content compiled
+            // at build time. There is no runtime sanitization — any HTML
+            // (including <script>, <iframe>, <object>) is emitted verbatim.
+            // Do not use this pipeline with untrusted or user-generated MDX.
+            // Links and images have separate is_safe_url() checks on their
+            // URL attributes; raw HTML nodes do not.
             builder.str_unescaped(&h.value);
         }
         markdown::mdast::Node::Text(t) => {
