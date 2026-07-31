@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use heck::ToKebabCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -105,7 +106,7 @@ impl Parse for CompileMdxInput {
 // mdx_page! input parsing
 // ---------------------------------------------------------------------------
 
-/// Input for `mdx_page!`: (route_path, file_path, [frontmatter = Type])
+/// Input for `mdx_page!`: (`route_path`, `file_path`, [frontmatter = Type])
 struct MdxPageInput {
     route_path: LitStr,
     file_path: LitStr,
@@ -122,10 +123,10 @@ impl Parse for MdxPageInput {
         if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             // Parse `frontmatter = Type`
-            let _kw: Ident = input.parse()?;
-            if _kw != "frontmatter" {
+            let kw: Ident = input.parse()?;
+            if kw != "frontmatter" {
                 return Err(syn::Error::new(
-                    _kw.span(),
+                    kw.span(),
                     "expected `frontmatter = Type`, found something else",
                 ));
             }
@@ -137,6 +138,42 @@ impl Parse for MdxPageInput {
             route_path,
             file_path,
             frontmatter_type,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// mdx_pages! input parsing
+// ---------------------------------------------------------------------------
+
+/// Input for `mdx_pages!`: (`directory_path`, prefix = "/optional/prefix")
+struct MdxPagesInput {
+    directory_path: LitStr,
+    prefix: Option<LitStr>,
+}
+
+impl Parse for MdxPagesInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let directory_path: LitStr = input.parse()?;
+
+        let mut prefix = None;
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            // Parse `prefix = "/some/path"`
+            let kw: Ident = input.parse()?;
+            if kw != "prefix" {
+                return Err(syn::Error::new(
+                    kw.span(),
+                    "expected `prefix = \"/path\"`, found something else",
+                ));
+            }
+            input.parse::<Token![=]>()?;
+            prefix = Some(input.parse()?);
+        }
+
+        Ok(Self {
+            directory_path,
+            prefix,
         })
     }
 }
@@ -205,7 +242,7 @@ fn compile_mdx_file(
     // Walk mdast into ViewWriter, skipping the YAML frontmatter node.
     let mut writer = ViewWriter::new();
     if let markdown::mdast::Node::Root(r) = root {
-        let start_idx = if frontmatter_yaml.is_some() { 1 } else { 0 };
+        let start_idx = usize::from(frontmatter_yaml.is_some());
         for child in r.children.iter().skip(start_idx) {
             walk_to_writer(&ctx, child, &mut writer);
         }
@@ -390,7 +427,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
         // Deserialize YAML at compile time into serde_value::Value, then
         // convert to a syn::Expr of the target type.
-        let deserialized = match serde_saphyr::from_str::<serde_value::Value>(&yaml) {
+        let deserialized = match serde_saphyr::from_str::<serde_value::Value>(yaml) {
             Ok(v) => v,
             Err(e) => {
                 return syn::Error::new(
@@ -447,6 +484,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
                 })
             }
 
+            #[allow(non_camel_case_types)]
             struct #unit_name;
 
             const ERASED: #topcoat_router::PageFn = #topcoat_router::PageFn::const_new(
@@ -468,6 +506,295 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 }
 
 // ---------------------------------------------------------------------------
+// mdx_pages! proc-macro
+// ---------------------------------------------------------------------------
+
+/// Derives a route path for a discovered `.mdx` file.
+///
+/// Given the scan directory, the resolved file path, and an optional prefix,
+/// computes the route path: applies the prefix, then appends the relative
+/// directory structure and kebab-cased filename stem.
+fn derive_route_path(
+    scan_dir: &Path,
+    file_path: &Path,
+    prefix: Option<&str>,
+) -> String {
+    let relative = file_path
+        .strip_prefix(scan_dir)
+        .unwrap_or(file_path)
+        .to_string_lossy();
+
+    // Remove .mdx extension.
+    let mut route = relative.into_owned();
+    if std::path::Path::new(&route)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mdx"))
+    {
+        route.truncate(route.len() - 4);
+    }
+
+    // Kebab-case the filename stem (last path component).
+    let parts: Vec<&str> = route.rsplitn(2, '/').collect();
+    let (dir_part, stem) = if parts.len() == 2 {
+        (Some(parts[1]), parts[0])
+    } else {
+        (None, parts[0])
+    };
+    let kebab_stem = stem.to_kebab_case();
+
+    let mut path_parts = Vec::new();
+    if let Some(dir) = dir_part {
+        path_parts.push(dir);
+    }
+    path_parts.push(&kebab_stem);
+
+    let relative_route = path_parts.join("/");
+
+    match prefix {
+        Some(p) => format!("{}/{}", p.trim_end_matches('/'), relative_route),
+        None => format!("/{relative_route}"),
+    }
+}
+
+/// Generates page registration tokens for a single `.mdx` file.
+///
+/// Mirrors the logic in `mdx_page!` but without frontmatter type arguments
+/// (since `mdx_pages!` does not carry per-file type declarations).
+fn generate_page_registration(
+    file_path: &Path,
+    route_path: &str,
+    span: Span,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let path_display = file_path.to_string_lossy();
+    let resolved = file_path.canonicalize().map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! cannot resolve path '{path_display}': {e}"),
+        )
+    })?;
+
+    let content = std::fs::read_to_string(&resolved).map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! cannot read '{path_display}': {e}"),
+        )
+    })?;
+
+    // Parse with markdown-rs.
+    let options = get_parse_options();
+    let root = markdown::to_mdast(&content, &options).map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! parse error in '{path_display}': {e}"),
+        )
+    })?;
+
+    // Extract frontmatter from root node.
+    let frontmatter_yaml = extract_frontmatter(&root);
+
+    // Build WalkContext with empty component registry.
+    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(&[], span);
+
+    // Walk mdast into ViewWriter, skipping the YAML frontmatter node.
+    let mut writer = ViewWriter::new();
+    if let markdown::mdast::Node::Root(r) = root {
+        let start_idx = usize::from(frontmatter_yaml.is_some());
+        for child in r.children.iter().skip(start_idx) {
+            topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
+        }
+    }
+
+    // Drain walker error buffer into syn::Error diagnostics.
+    let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
+    if !errors.is_empty() {
+        let mut combined_err = syn::Error::new(span, errors[0].clone());
+        for err in &errors[1..] {
+            combined_err.combine(syn::Error::new(span, err.clone()));
+        }
+        return Err(combined_err);
+    }
+
+    let view_tokens = writer.into_token_stream();
+
+    // Generate unique identifiers from file stem.
+    // Use snake_case for identifiers (valid Rust) but the route path
+    // (passed as argument) may use kebab-case.
+    let file_stem = resolved
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("page")
+        .to_kebab_case()
+        .replace('-', "_");
+    let render_fn_name = Ident::new(&format!("__mdx_pages_render_{file_stem}"), span);
+    let unit_name = Ident::new(&format!("__mdx_pages_{file_stem}"), span);
+    let route_path_lit = LitStr::new(route_path, span);
+
+    Ok(quote! {
+        const _: () = {
+            fn #render_fn_name(
+                cx: &#topcoat_context::Cx,
+                body: #topcoat_router::Body,
+            ) -> ::std::pin::Pin<
+                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send>
+            > {
+                ::std::boxed::Box::pin(async move {
+                    Ok(#view_tokens?)
+                })
+            }
+
+            #[allow(non_camel_case_types)]
+            struct #unit_name;
+
+            const ERASED: #topcoat_router::PageFn = #topcoat_router::PageFn::const_new(
+                #topcoat_router::OwnedMethods::One(#topcoat_router::Method::GET),
+                ::std::borrow::Cow::Borrowed(#topcoat_router::Path::new(#route_path_lit)),
+                #render_fn_name,
+            );
+
+            impl ::core::convert::From<#unit_name> for #topcoat_router::PageFn {
+                fn from(_: #unit_name) -> Self {
+                    ERASED
+                }
+            }
+
+            #topcoat_inventory::submit!(ERASED);
+        };
+    })
+}
+
+/// Auto-discovers `.mdx` files in a directory and registers each as a page route.
+///
+/// # Arguments
+///
+/// * `directory_path` - A string literal pointing to a directory, relative to
+///   `CARGO_MANIFEST_DIR`. All `.mdx` files within this directory are scanned.
+/// * `prefix = "/path"` (optional) - A route path prefix prepended to each derived route.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Register all .mdx files under content/blog/ with /blog prefix:
+/// mdx_pages!("content/blog", prefix = "/blog");
+///
+/// // Register without prefix:
+/// mdx_pages!("pages");
+/// ```
+///
+/// Route paths are derived from the file structure:
+/// - `content/blog/hello-world.mdx` -> `/blog/hello-world`
+/// - `content/blog/nested/post.mdx` -> `/blog/nested/post`
+#[proc_macro]
+pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
+    let input = match syn::parse::<MdxPagesInput>(tokens) {
+        Ok(i) => i,
+        Err(e) => {
+            return syn::Error::new(
+                Span::call_site(),
+                format!(
+                    "mdx_pages! expects: directory_path [, prefix = \"/path\"]: {e}"
+                ),
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    let dir_str = input.directory_path.value();
+    let span = input.directory_path.span();
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
+    let scan_dir = Path::new(&manifest_dir).join(&dir_str);
+
+    // Validate scan directory exists.
+    if !scan_dir.is_dir() {
+        return syn::Error::new(
+            span,
+            format!("mdx_pages! directory '{dir_str}' does not exist (resolved: {})", scan_dir.display()),
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let canonical_scan_dir = scan_dir.canonicalize().map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! cannot canonicalize directory '{dir_str}': {e}"),
+        )
+    });
+
+    let canonical_scan_dir = match canonical_scan_dir {
+        Ok(p) => p,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let canonical_manifest = std::path::Path::new(&manifest_dir)
+        .canonicalize()
+        .map_err(|e| {
+            syn::Error::new(
+                span,
+                format!("mdx_pages! cannot canonicalize CARGO_MANIFEST_DIR '{manifest_dir}': {e}"),
+            )
+        });
+
+    let canonical_manifest = match canonical_manifest {
+        Ok(p) => p,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let prefix = input.prefix.as_ref().map(syn::LitStr::value);
+
+    // Use ignore::Walk to find all .mdx files, respecting .gitignore.
+    let mut results = Vec::new();
+    for entry in ignore::Walk::new(&canonical_scan_dir) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                // Skip entries that cannot be read (e.g., permission errors).
+                // These are non-fatal — just log and continue.
+                let _ = e;
+                continue;
+            }
+        };
+
+        let file_path = entry.path();
+
+        // Only process .mdx files.
+        if file_path.extension().and_then(|s| s.to_str()) != Some("mdx") {
+            continue;
+        }
+
+        // Security: verify resolved path stays within manifest directory (T-03-04).
+        if !file_path.starts_with(&canonical_manifest) {
+            results.push(
+                syn::Error::new(
+                    span,
+                    format!(
+                        "mdx_pages! file '{}' escapes CARGO_MANIFEST_DIR (T-03-04)",
+                        file_path.display()
+                    ),
+                )
+                .to_compile_error(),
+            );
+            continue;
+        }
+
+        // Derive the route path.
+        let route_path = derive_route_path(&canonical_scan_dir, file_path, prefix.as_deref());
+
+        // Generate registration tokens for this file.
+        match generate_page_registration(file_path, &route_path, span) {
+            Ok(ts) => results.push(ts),
+            Err(e) => results.push(e.to_compile_error()),
+        }
+    }
+
+    quote! {
+        #(#results)*
+    }
+    .into()
+}
+
+// ---------------------------------------------------------------------------
 // serde_value::Value -> syn::Expr conversion
 // ---------------------------------------------------------------------------
 
@@ -479,34 +806,34 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
             Ok(syn::parse_quote! { #b })
         }
         serde_value::Value::I8(n) => {
-            Ok(make_lit_int(format!("{}i8", n), span))
+            Ok(make_lit_int(&format!("{n}i8"), span))
         }
         serde_value::Value::I16(n) => {
-            Ok(make_lit_int(format!("{}i16", n), span))
+            Ok(make_lit_int(&format!("{n}i16"), span))
         }
         serde_value::Value::I32(n) => {
-            Ok(make_lit_int(format!("{}i32", n), span))
+            Ok(make_lit_int(&format!("{n}i32"), span))
         }
         serde_value::Value::I64(n) => {
-            Ok(make_lit_int(format!("{}i64", n), span))
+            Ok(make_lit_int(&format!("{n}i64"), span))
         }
         serde_value::Value::U8(n) => {
-            Ok(make_lit_int(format!("{}u8", n), span))
+            Ok(make_lit_int(&format!("{n}u8"), span))
         }
         serde_value::Value::U16(n) => {
-            Ok(make_lit_int(format!("{}u16", n), span))
+            Ok(make_lit_int(&format!("{n}u16"), span))
         }
         serde_value::Value::U32(n) => {
-            Ok(make_lit_int(format!("{}u32", n), span))
+            Ok(make_lit_int(&format!("{n}u32"), span))
         }
         serde_value::Value::U64(n) => {
-            Ok(make_lit_int(format!("{}u64", n), span))
+            Ok(make_lit_int(&format!("{n}u64"), span))
         }
         serde_value::Value::F32(n) => {
-            Ok(make_lit_float(format!("{:.1}f32", n), span))
+            Ok(make_lit_float(&format!("{n:.1}f32"), span))
         }
         serde_value::Value::F64(n) => {
-            Ok(make_lit_float(format!("{:.1}f64", n), span))
+            Ok(make_lit_float(&format!("{n:.1}f64"), span))
         }
         serde_value::Value::Char(c) => {
             Ok(syn::parse_quote! { #c })
@@ -552,7 +879,7 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
         serde_value::Value::Bytes(b) => {
             // Bytes in frontmatter are unusual; encode as a vec of u8 values.
             let bytes: Vec<syn::Expr> = b.iter()
-                .map(|v| make_lit_int(format!("{}u8", v), span))
+                .map(|v| make_lit_int(&format!("{v}u8"), span))
                 .collect();
             Ok(syn::parse_quote! { vec![#(#bytes),*] })
         }
@@ -560,13 +887,13 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
 }
 
 /// Create a `syn::Expr` from an integer literal with a type suffix.
-fn make_lit_int(repr: String, _span: Span) -> syn::Expr {
-    let lit: syn::LitInt = syn::parse_str(&repr).expect("valid integer literal");
+fn make_lit_int(repr: &str, _span: Span) -> syn::Expr {
+    let lit: syn::LitInt = syn::parse_str(repr).expect("valid integer literal");
     syn::parse_quote! { #lit }
 }
 
 /// Create a `syn::Expr` from a float literal with a type suffix.
-fn make_lit_float(repr: String, _span: Span) -> syn::Expr {
-    let lit: syn::LitFloat = syn::parse_str(&repr).expect("valid float literal");
+fn make_lit_float(repr: &str, _span: Span) -> syn::Expr {
+    let lit: syn::LitFloat = syn::parse_str(repr).expect("valid float literal");
     syn::parse_quote! { #lit }
 }

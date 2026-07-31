@@ -27,6 +27,8 @@ quote.workspace = true
 serde = "1"
 serde-saphyr = "1.0"
 serde-value = "0.7"
+heck = { workspace = true }
+ignore = { workspace = true }
 syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
