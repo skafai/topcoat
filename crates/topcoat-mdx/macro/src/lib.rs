@@ -20,6 +20,7 @@ use topcoat_view_grammar::view::ViewWriter;
 /// A single `Ident => Path` pair in the component registry braced block.
 struct CompPair {
     name: Ident,
+    #[allow(dead_code)]
     fat_arrow: Token![=>],
     path: SynPath,
 }
@@ -75,7 +76,7 @@ impl Parse for CompileMdxInput {
             let maybe_ident: Ident = fork.parse()?;
             if fork.peek(Token![!])
                 && fork.peek2(syn::token::Brace)
-                && maybe_ident.to_string() == "mdx_components"
+                && maybe_ident == "mdx_components"
             {
                 // Commit the parse from the fork.
                 let _macro_name: Ident = input.parse()?;
@@ -154,7 +155,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let canonical = match resolved.canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            let msg = format!("compile_mdx! cannot resolve path '{}': {e}", path_str);
+            let msg = format!("compile_mdx! cannot resolve path '{path_str}': {e}");
             return syn::Error::new(Span::call_site(), msg)
                 .to_compile_error()
                 .into();
@@ -164,8 +165,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         Ok(p) => p,
         Err(e) => {
             let msg = format!(
-                "compile_mdx! cannot canonicalize CARGO_MANIFEST_DIR '{}': {e}",
-                manifest_dir
+                "compile_mdx! cannot canonicalize CARGO_MANIFEST_DIR '{manifest_dir}': {e}"
             );
             return syn::Error::new(Span::call_site(), msg)
                 .to_compile_error()
@@ -175,8 +175,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 
     if !canonical.starts_with(&canonical_manifest) {
         let msg = format!(
-            "compile_mdx! path '{}' escapes CARGO_MANIFEST_DIR (T-01-01)",
-            path_str
+            "compile_mdx! path '{path_str}' escapes CARGO_MANIFEST_DIR (T-01-01)"
         );
         return syn::Error::new(Span::call_site(), msg)
             .to_compile_error()
@@ -187,7 +186,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let content = match std::fs::read_to_string(&canonical) {
         Ok(c) => c,
         Err(e) => {
-            let msg = format!("compile_mdx! cannot read '{}': {e}", path_str);
+            let msg = format!("compile_mdx! cannot read '{path_str}': {e}");
             return syn::Error::new(Span::call_site(), msg)
                 .to_compile_error()
                 .into();
@@ -200,7 +199,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         Ok(r) => r,
         Err(e) => {
             // OQ-3: convert parser message to syn::Error (T-01-04 mitigation).
-            let msg = format!("compile_mdx! parse error in '{}': {e}", path_str);
+            let msg = format!("compile_mdx! parse error in '{path_str}': {e}");
             return syn::Error::new(Span::call_site(), msg)
                 .to_compile_error()
                 .into();

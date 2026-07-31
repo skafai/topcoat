@@ -9,6 +9,7 @@ use markdown::{Constructs, ParseOptions};
 ///
 /// Enables GFM extensions (tables, strikethrough, task lists, autolinks),
 /// MDX JSX flow and text support, and YAML frontmatter.
+#[must_use]
 pub fn get_parse_options() -> ParseOptions {
     let mut constructs = Constructs::gfm();
     constructs.mdx_jsx_flow = true;
