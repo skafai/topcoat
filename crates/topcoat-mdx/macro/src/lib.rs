@@ -20,18 +20,15 @@ use topcoat_view_grammar::view::ViewWriter;
 /// A single `Ident => Path` pair in the component registry braced block.
 struct CompPair {
     name: Ident,
-    #[allow(dead_code)]
-    fat_arrow: Token![=>],
     path: SynPath,
 }
 
 impl Parse for CompPair {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            name: input.parse()?,
-            fat_arrow: input.parse()?,
-            path: input.parse()?,
-        })
+        let name: Ident = input.parse()?;
+        let _: Token![=>] = input.parse()?;
+        let path: SynPath = input.parse()?;
+        Ok(Self { name, path })
     }
 }
 
