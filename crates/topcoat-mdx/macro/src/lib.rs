@@ -545,11 +545,12 @@ fn derive_route_path(
     };
     let kebab_stem = stem.to_kebab_case();
 
-    let mut path_parts = Vec::new();
+    let mut path_parts: Vec<String> = Vec::new();
     if let Some(dir) = dir_part {
-        path_parts.push(dir);
+        let kebab_dir: Vec<String> = dir.split('/').map(|seg| seg.to_kebab_case()).collect();
+        path_parts.push(kebab_dir.join("/"));
     }
-    path_parts.push(&kebab_stem);
+    path_parts.push(kebab_stem);
 
     let relative_route = path_parts.join("/");
 
