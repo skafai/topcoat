@@ -1161,7 +1161,7 @@ mod tests {
             assert!(img.is_some(), "should find <img> element");
             let img = img.unwrap();
             let attrs = img.attributes();
-            assert!(!attrs.is_empty(), "image should have attributes (src, alt)",);
+            assert!(!attrs.is_empty(), "image should have attributes (src, alt)");
         }
     }
 
@@ -1512,10 +1512,10 @@ mod tests {
             return Some(element);
         }
         for child in element.children() {
-            if let Node::Element(inner) = child {
-                if let Some(found) = find_element_recursive(inner, tag) {
-                    return Some(found);
-                }
+            if let Node::Element(inner) = child
+                && let Some(found) = find_element_recursive(inner, tag)
+            {
+                return Some(found);
             }
         }
         None

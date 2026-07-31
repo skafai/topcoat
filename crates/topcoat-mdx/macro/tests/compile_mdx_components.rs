@@ -9,7 +9,7 @@ use topcoat_view_module::{View, component, view};
 
 type Result<T = View> = topcoat::Result<T>;
 
-/// Helper to run compile_mdx! with a `__cx` binding so that component
+/// Helper to run `compile_mdx`! with a `__cx` binding so that component
 /// code (`__view(__cx, ...)`) compiles correctly.
 ///
 /// The `compile_mdx!` macro generates code that references `__cx` when
@@ -155,9 +155,9 @@ mod components_basic {
 mod md_backward_compat {
     use super::*;
 
-    /// Verify compile_mdx! compiles plain .md files (not just .mdx) via
+    /// Verify `compile_mdx`! compiles plain .md files (not just .mdx) via
     /// the one-arg form, ensuring the walker handles .md input correctly
-    /// after WalkContext threading changes.
+    /// after `WalkContext` threading changes.
     #[tokio::test]
     async fn plain_markdown_compiles() {
         let _view = compile_mdx!("tests/fixtures/plain_markdown.md");
@@ -203,17 +203,17 @@ mod unknown_component_error {
     use topcoat_mdx_grammar::walker::WalkContext;
     use topcoat_view_grammar::view::ViewWriter;
 
-    /// Tests that walking MDX content with an unknown PascalCase element
+    /// Tests that walking MDX content with an unknown `PascalCase` element
     /// pushes an error into ctx.errors. This is walker-level, not
-    /// macro-level — the compile_mdx! proc-macro is not exercised here.
+    /// macro-level — the `compile_mdx`! proc-macro is not exercised here.
     #[test]
     fn walker_reports_unknown_component() {
         // Parse MDX with an unregistered component.
-        let content = r#"Before
+        let content = r"Before
 
 <UnknownWidget></UnknownWidget>
 
-After"#;
+After";
 
         let options = topcoat_mdx_grammar::parse::get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();
@@ -241,7 +241,7 @@ After"#;
 
     /// Tests that walking a fixture file with an unregistered component
     /// pushes an error. This is walker-level, not macro-level — the
-    /// compile_mdx! proc-macro is not exercised here.
+    /// `compile_mdx`! proc-macro is not exercised here.
     #[test]
     fn walker_reports_unknown_component_from_fixture() {
         // Create a temporary .mdx file with an unknown component.
@@ -250,7 +250,7 @@ After"#;
 
         // Write the fixture if it doesn't exist.
         if !fixture_path.exists() {
-            std::fs::write(&fixture_path, r#"<NotRegistered></NotRegistered>"#).unwrap();
+            std::fs::write(&fixture_path, "<NotRegistered></NotRegistered>").unwrap();
         }
 
         // The two-arg form with empty registry should fail to compile.
