@@ -36,6 +36,31 @@ async fn compile_mdx_backward_compat_one_arg() {
     assert!(html.contains("Tracer Test"), "tracer content should render");
 }
 
+// ---- No frontmatter files ----
+
+#[tokio::test]
+async fn compile_mdx_without_frontmatter() {
+    // Verify compile_mdx! on a no-frontmatter file compiles (no YAML const emitted).
+    let view = compile_mdx!("tests/fixtures/frontmatter_empty.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(html.contains("No Frontmatter"), "plain content should render");
+}
+
+// ---- Complex frontmatter ----
+
+#[tokio::test]
+async fn compile_mdx_complex_frontmatter() {
+    // Verify compile_mdx! on a complex frontmatter file compiles.
+    let view = compile_mdx!("tests/fixtures/frontmatter_complex.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(html.contains("Complex Frontmatter Test"), "body should render");
+    assert!(!html.contains("---"), "frontmatter should not render as content");
+}
+
 // ---- Frontmatter extractor ----
 
 #[test]
