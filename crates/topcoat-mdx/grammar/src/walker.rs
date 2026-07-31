@@ -778,6 +778,29 @@ mod tests {
         assert!(yaml.contains("key"), "should contain the YAML content");
     }
 
+    #[test]
+    fn extract_frontmatter_toml_present() {
+        let root = parse_to_root(
+            "+++\ntitle = \"Hello\"\ndate = 2024-01-01\n+++\n\n# Body",
+        );
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some(), "should extract TOML frontmatter");
+        let fm = fm.unwrap();
+        assert!(fm.contains("title"), "should contain title field");
+        assert!(fm.contains("Hello"), "should contain title value");
+    }
+
+    #[test]
+    fn extract_frontmatter_mdxjs_esm_returns_none() {
+        // MdxjsEsm frontmatter is intentionally not extracted since it
+        // contains JavaScript expressions, not deserializable data.
+        let root = parse_to_root(
+            "```js\nexport const title = \"Hello\";\n```\n\n# Body",
+        );
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_none(), "MdxjsEsm should not be extracted as frontmatter");
+    }
+
     fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
         let options = get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();
