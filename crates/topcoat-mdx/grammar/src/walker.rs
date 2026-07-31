@@ -4,14 +4,47 @@
 //! (`Node`, `Element`, `Nodes`), enabling markdown content to be rendered
 //! through the same code generation pipeline as handwritten templates.
 
+use std::cell::RefCell;
+
 use proc_macro2::Span;
-use syn::{parse_quote, Ident, LitStr};
-use topcoat_view_grammar::attributes::{
-    Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes,
+use syn::{Expr, Ident, LitStr, Path, parse_quote};
+use topcoat_view_grammar::{
+    attributes::{Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes},
+    view::*,
 };
-use topcoat_view_grammar::view::*;
 
 use crate::parse::get_parse_options;
+
+/// Context threaded through the walker so JSX element handlers can look up
+/// registered components and report diagnostics.
+pub struct WalkContext<'a> {
+    /// Component registry: tag-name → Rust path pairs.
+    pub components: &'a [(String, Path)],
+    /// Error strings collected during walking. The macro layer (Plan 02)
+    /// drains this buffer and converts each entry into a `syn::Error`.
+    pub errors: RefCell<Vec<String>>,
+}
+
+impl<'a> WalkContext<'a> {
+    /// Create a new walk context with the given component registry.
+    pub fn new(components: &'a [(String, Path)]) -> Self {
+        Self {
+            components,
+            errors: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Create an empty-context walker (no component registry).
+    pub fn empty() -> Self {
+        Self::new(&[])
+    }
+}
+
+impl Default for WalkContext<'_> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 /// Walks an mdast node tree into a Topcoat `view!` `View`.
 ///
@@ -24,51 +57,54 @@ use crate::parse::get_parse_options;
 /// unescaped output). Use `compile_mdx!` for HTML passthrough support.
 ///
 /// Returns `Err` if the markdown parser fails, rather than panicking.
-pub fn mdx_to_view(mdx_content: &str) -> Result<View, markdown::message::Message> {
+pub fn mdx_to_view(
+    ctx: &WalkContext,
+    mdx_content: &str,
+) -> Result<View, markdown::message::Message> {
     let options = get_parse_options();
     let root = markdown::to_mdast(mdx_content, &options)?;
 
     let nodes = match root {
-        markdown::mdast::Node::Root(r) => walk_nodes(&r.children),
+        markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children),
         _ => Nodes::new(),
     };
     Ok(View { cx: None, nodes })
 }
 
 /// Walks a slice of mdast nodes into a `Nodes` collection.
-pub fn walk_nodes(mdast_nodes: &[markdown::mdast::Node]) -> Nodes {
+pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> Nodes {
     let mut nodes = Vec::new();
     for node in mdast_nodes {
-        nodes.extend(walk_node(node));
+        nodes.extend(walk_node(ctx, node));
     }
     nodes.into()
 }
 
 /// Walks a single mdast node into zero or more view `Node`s.
-pub fn walk_node(node: &markdown::mdast::Node) -> Vec<Node> {
+pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
-        markdown::mdast::Node::Root(r) => walk_nodes(&r.children).into_vec(),
+        markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
         markdown::mdast::Node::Paragraph(p) => {
-            vec![html_element("p", walk_nodes(&p.children))]
+            vec![html_element("p", walk_nodes(ctx, &p.children))]
         }
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
-            vec![html_element(&tag, walk_nodes(&h.children))]
+            vec![html_element(&tag, walk_nodes(ctx, &h.children))]
         }
         markdown::mdast::Node::Text(t) => {
             vec![text_node(&t.value)]
         }
         markdown::mdast::Node::Emphasis(e) => {
-            vec![html_element("em", walk_nodes(&e.children))]
+            vec![html_element("em", walk_nodes(ctx, &e.children))]
         }
         markdown::mdast::Node::Strong(s) => {
-            vec![html_element("strong", walk_nodes(&s.children))]
+            vec![html_element("strong", walk_nodes(ctx, &s.children))]
         }
         markdown::mdast::Node::InlineCode(c) => {
             vec![html_element("code", Nodes::from(vec![text_node(&c.value)]))]
         }
         markdown::mdast::Node::Blockquote(b) => {
-            vec![html_element("blockquote", walk_nodes(&b.children))]
+            vec![html_element("blockquote", walk_nodes(ctx, &b.children))]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
             vec![Node::Element(Box::new(void_element("hr")))]
@@ -76,17 +112,32 @@ pub fn walk_node(node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Break(_) => {
             vec![Node::Element(Box::new(void_element("br")))]
         }
-        markdown::mdast::Node::Link(l) => vec![walk_link(l)],
+        markdown::mdast::Node::Link(l) => vec![walk_link(ctx, l)],
         markdown::mdast::Node::Image(i) => vec![walk_image(i)],
         // Raw HTML cannot be represented in the view! AST without a
         // ViewWriter (which supports write_str_unescaped). Use
         // walk_to_writer for HTML passthrough.
         markdown::mdast::Node::Html(_) => Vec::new(),
         markdown::mdast::Node::Code(c) => vec![walk_code_block(c)],
-        markdown::mdast::Node::List(l) => vec![walk_list(l)],
-        markdown::mdast::Node::ListItem(li) => vec![walk_list_item(li)],
-        markdown::mdast::Node::Table(t) => vec![walk_table(t)],
-        markdown::mdast::Node::Delete(d) => vec![walk_delete(d)],
+        markdown::mdast::Node::List(l) => vec![walk_list(ctx, l)],
+        markdown::mdast::Node::ListItem(li) => vec![walk_list_item(ctx, li)],
+        markdown::mdast::Node::Table(t) => vec![walk_table(ctx, t)],
+        markdown::mdast::Node::Delete(d) => vec![walk_delete(ctx, d)],
+        // MDX JSX component elements — Phase 02.
+        markdown::mdast::Node::MdxJsxFlowElement(el) => {
+            if let Some(comp_node) = walk_jsx_element(ctx, el) {
+                vec![comp_node]
+            } else {
+                Vec::new()
+            }
+        }
+        markdown::mdast::Node::MdxJsxTextElement(el) => {
+            if let Some(comp_node) = walk_jsx_text_element(ctx, el) {
+                vec![comp_node]
+            } else {
+                Vec::new()
+            }
+        }
         // Default: skip nodes not supported in this phase.
         // Deferred (require additional infrastructure for Phase 02+):
         // - LinkReference, ImageReference: need a definition registry to resolve [ref] targets
@@ -94,7 +145,6 @@ pub fn walk_node(node: &markdown::mdast::Node) -> Vec<Node> {
         // - FootnoteDefinition, FootnoteReference: footnote support
         // Skipped (out of scope for markdown compilation):
         // - Frontmatter (Yaml, Toml, MdxjsEsm): metadata, not rendered content
-        // - MdxJsxFlowElement, MdxJsxTextElement: MDX JSX components
         // - MdxFlowExpression, MdxTextExpression: MDX expressions
         // - InlineMath, Math: LaTeX math (not enabled in parse options)
         // - TableRow, TableCell: handled internally by walk_table
@@ -107,7 +157,7 @@ pub fn walk_node(node: &markdown::mdast::Node) -> Vec<Node> {
 /// This is the key function for raw HTML passthrough (D-03): `mdast::Html`
 /// nodes are written via `write_str_unescaped()`, while `mdast::Text` nodes
 /// go through `write_text()` for proper escaping.
-pub fn walk_to_writer(node: &markdown::mdast::Node, writer: &mut ViewWriter) {
+pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, writer: &mut ViewWriter) {
     match node {
         markdown::mdast::Node::Html(h) => {
             // Raw HTML passthrough — trusted author content, build-time only.
@@ -119,7 +169,7 @@ pub fn walk_to_writer(node: &markdown::mdast::Node, writer: &mut ViewWriter) {
         }
         _ => {
             // For all other node types, construct view nodes and write them.
-            let view_nodes = walk_node(node);
+            let view_nodes = walk_node(ctx, node);
             for vn in view_nodes {
                 vn.write(writer);
             }
@@ -144,10 +194,10 @@ fn is_safe_url(url: &str) -> bool {
 /// Walks a link node: `<a href="url" title="...">...</a>`.
 /// Strips dangerous URL schemes (javascript:, vbscript:, data:)
 /// to prevent XSS — renders link text as a `<span>` without href.
-fn walk_link(link: &markdown::mdast::Link) -> Node {
+fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     if !is_safe_url(&link.url) {
         // Strip the href to prevent XSS; render link text only.
-        let children = walk_nodes(&link.children);
+        let children = walk_nodes(ctx, &link.children);
         return html_element("span", children);
     }
     let mut attrs = Vec::with_capacity(2);
@@ -156,8 +206,10 @@ fn walk_link(link: &markdown::mdast::Link) -> Node {
         attrs.push(create_attribute("title", title));
     }
     let attributes = with_attributes(attrs);
-    let children = walk_nodes(&link.children);
-    Node::Element(Box::new(normal_element_with_attrs("a", attributes, children)))
+    let children = walk_nodes(ctx, &link.children);
+    Node::Element(Box::new(normal_element_with_attrs(
+        "a", attributes, children,
+    )))
 }
 
 /// Walks an image node: `<img src="url" alt="alt" title="...">`.
@@ -193,22 +245,22 @@ fn walk_code_block(code: &markdown::mdast::Code) -> Node {
 }
 
 /// Walks a list: `<ul>` or `<ol>` with `<li>` children.
-fn walk_list(list: &markdown::mdast::List) -> Node {
+fn walk_list(ctx: &WalkContext, list: &markdown::mdast::List) -> Node {
     let tag = if list.ordered { "ol" } else { "ul" };
     let mut children = Vec::new();
     for node in &list.children {
         match node {
             markdown::mdast::Node::ListItem(item) => {
-                children.push(walk_list_item(item));
+                children.push(walk_list_item(ctx, item));
             }
-            other => children.extend(walk_node(other)),
+            other => children.extend(walk_node(ctx, other)),
         }
     }
     html_element(tag, Nodes::from(children))
 }
 
 /// Walks a list item: `<li>` with optional leading checkbox for task lists.
-fn walk_list_item(item: &markdown::mdast::ListItem) -> Node {
+fn walk_list_item(ctx: &WalkContext, item: &markdown::mdast::ListItem) -> Node {
     let mut children = Vec::new();
     if let Some(checked) = &item.checked {
         if *checked {
@@ -228,12 +280,12 @@ fn walk_list_item(item: &markdown::mdast::ListItem) -> Node {
             children.push(Node::Element(Box::new(input_el)));
         }
     }
-    children.extend(walk_nodes(&item.children).into_vec());
+    children.extend(walk_nodes(ctx, &item.children).into_vec());
     html_element("li", Nodes::from(children))
 }
 
 /// Walks a table: `<table><thead>...</thead><tbody>...</tbody></table>`.
-fn walk_table(table: &markdown::mdast::Table) -> Node {
+fn walk_table(ctx: &WalkContext, table: &markdown::mdast::Table) -> Node {
     let mut child_nodes = Vec::new();
 
     // Iterate over table.children — each is Node::TableRow.
@@ -257,7 +309,13 @@ fn walk_table(table: &markdown::mdast::Table) -> Node {
             .enumerate()
             .filter_map(|(col_idx, n)| {
                 if let markdown::mdast::Node::TableCell(cell) = n {
-                    Some(walk_table_cell_inner(cell, true, col_idx, &table.align))
+                    Some(walk_table_cell_inner(
+                        ctx,
+                        cell,
+                        true,
+                        col_idx,
+                        &table.align,
+                    ))
                 } else {
                     None
                 }
@@ -279,6 +337,7 @@ fn walk_table(table: &markdown::mdast::Table) -> Node {
                     .filter_map(|(col_idx, n)| {
                         if let markdown::mdast::Node::TableCell(cell) = n {
                             Some(walk_table_cell_inner(
+                                ctx,
                                 cell,
                                 false,
                                 col_idx,
@@ -301,6 +360,7 @@ fn walk_table(table: &markdown::mdast::Table) -> Node {
 
 /// Walks a table cell: `<th>` or `<td>` with optional alignment style.
 fn walk_table_cell_inner(
+    ctx: &WalkContext,
     cell: &markdown::mdast::TableCell,
     is_header: bool,
     col_idx: usize,
@@ -318,21 +378,189 @@ fn walk_table_cell_inner(
             markdown::mdast::AlignKind::Center => "center",
             markdown::mdast::AlignKind::None => unreachable!(),
         };
-        attrs.push(create_attribute(
-            "style",
-            &format!("text-align: {value}"),
-        ));
+        attrs.push(create_attribute("style", &format!("text-align: {value}")));
     }
     // Cell children are Node variants (Text, Emphasis, etc.), not TableCell.
-    let children = walk_nodes(&cell.children);
+    let children = walk_nodes(ctx, &cell.children);
     let attributes = with_attributes(attrs);
-    Node::Element(Box::new(normal_element_with_attrs(tag, attributes, children)))
+    Node::Element(Box::new(normal_element_with_attrs(
+        tag, attributes, children,
+    )))
 }
 
 /// Walks a delete (strikethrough) node: `<del>...</del>`.
-fn walk_delete(delete: &markdown::mdast::Delete) -> Node {
-    let children = walk_nodes(&delete.children);
+fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -> Node {
+    let children = walk_nodes(ctx, &delete.children);
     html_element("del", children)
+}
+
+// ---------------------------------------------------------------------------
+// JSX component walking (Phase 02)
+// ---------------------------------------------------------------------------
+
+/// Smart-coerce an MDX attribute string to a typed Rust literal.
+///
+/// D-02: `"true"` / `"false"` -> bool, pure integers -> `LitInt`,
+/// pure floats -> `LitFloat`, everything else -> `LitStr`.
+/// Leading-zero digit strings (e.g. `"007"`) stay as strings because
+/// `syn::LitInt` rejects them.
+pub fn coerce_attr_value(value: &str) -> Expr {
+    match value {
+        "true" => return syn::parse_quote!(true),
+        "false" => return syn::parse_quote!(false),
+        _ => {}
+    }
+    // Try integer — but reject leading-zero strings like "007" (syn 2.0
+    // accepts them as valid LitInt values, so we guard manually).
+    let has_leading_zeros = value.len() > 1 && value.starts_with('0');
+    if !has_leading_zeros {
+        if let Ok(lit) = syn::parse_str::<syn::LitInt>(value) {
+            return Expr::Lit(syn::ExprLit {
+                attrs: vec![],
+                lit: syn::Lit::Int(lit),
+            });
+        }
+    }
+    // Try float.
+    if let Ok(lit) = syn::parse_str::<syn::LitFloat>(value) {
+        return Expr::Lit(syn::ExprLit {
+            attrs: vec![],
+            lit: syn::Lit::Float(lit),
+        });
+    }
+    // Default: string literal.
+    Expr::Lit(syn::ExprLit {
+        attrs: vec![],
+        lit: syn::Lit::Str(LitStr::new(value, Span::call_site())),
+    })
+}
+
+/// Walk JSX attributes from an mdast element into `NamedArg`s.
+///
+/// - Bare attributes (value: None) -> `true` (D-03).
+/// - Literal attributes -> `coerce_attr_value` (D-02).
+/// - Expression attributes (`{...spread}`) -> skipped (Pitfall 7).
+/// - Namespaced attribute names -> pushed to `ctx.errors` (L-02).
+fn walk_jsx_attributes(
+    ctx: &WalkContext,
+    attrs: &[markdown::mdast::AttributeContent],
+) -> Vec<NamedArg> {
+    attrs
+        .iter()
+        .filter_map(|content| match content {
+            markdown::mdast::AttributeContent::Property(attr) => {
+                // Skip namespaced attribute names (e.g. xml:lang) — L-02.
+                if attr.name.contains(':') {
+                    ctx.errors.borrow_mut().push(format!(
+                        "namespaced attribute '{}' not supported",
+                        attr.name
+                    ));
+                    return None;
+                }
+                let value = match &attr.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => coerce_attr_value(s),
+                    None => syn::parse_quote!(true), // bare attribute → true (D-03)
+                    Some(markdown::mdast::AttributeValue::Expression(_)) => {
+                        // Expression attributes like `{value}` are out of scope.
+                        ctx.errors.borrow_mut().push(format!(
+                            "expression attribute '{}' not supported",
+                            attr.name
+                        ));
+                        return None;
+                    }
+                };
+                Some(NamedArg {
+                    ident: make_ident(&attr.name),
+                    colon: Default::default(),
+                    value: NamedArgValue::Expr(value),
+                })
+            }
+            markdown::mdast::AttributeContent::Expression(_) => {
+                // Spread attributes like `{...props}` are out of scope — Pitfall 7.
+                ctx.errors
+                    .borrow_mut()
+                    .push("spread attributes not supported".to_string());
+                None
+            }
+        })
+        .collect()
+}
+
+/// Walk a flow-level JSX element (`MdxJsxFlowElement`) into `Option<Node::Component>`.
+///
+/// Returns `Some` when the element name is PascalCase AND registered in
+/// `ctx.components`. Returns `None` for:
+/// - Lowercase names (HTML elements, not components — Pitfall 2).
+/// - Fragments (`name: None` — Pitfall 8).
+/// - Unregistered PascalCase names (pushes error to `ctx.errors` — D-04).
+pub fn walk_jsx_element(
+    ctx: &WalkContext,
+    element: &markdown::mdast::MdxJsxFlowElement,
+) -> Option<Node> {
+    let name = element.name.as_deref()?;
+    // Fragments (name: None) handled by the `?` above — Pitfall 8.
+
+    // Lowercase = HTML element, not a component — Pitfall 2.
+    if !name.chars().next().map_or(false, char::is_uppercase) {
+        return None;
+    }
+
+    // Look up in component registry — D-04.
+    let path = match ctx
+        .components
+        .iter()
+        .find(|(tag, _)| tag == name)
+        .map(|(_, p)| p.clone())
+    {
+        Some(path) => path,
+        None => {
+            ctx.errors
+                .borrow_mut()
+                .push(format!("unknown component '{}'", name));
+            return None;
+        }
+    };
+
+    let named_args = walk_jsx_attributes(ctx, &element.attributes);
+    let children = walk_nodes(ctx, &element.children);
+
+    Some(Node::Component(Component {
+        path,
+        paren_token: Default::default(),
+        named_args,
+        children,
+    }))
+}
+
+/// Walk a text-level JSX element (`MdxJsxTextElement`) into `Option<Node::Component>`.
+///
+/// Same logic as `walk_jsx_element` but for inline JSX (e.g. `<Inline>`
+/// inside a paragraph).
+pub fn walk_jsx_text_element(
+    ctx: &WalkContext,
+    element: &markdown::mdast::MdxJsxTextElement,
+) -> Option<Node> {
+    let name = element.name.as_deref()?;
+
+    if !name.chars().next().map_or(false, char::is_uppercase) {
+        return None;
+    }
+
+    let path = ctx
+        .components
+        .iter()
+        .find(|(tag, _)| tag == name)
+        .map(|(_, p)| p.clone())?;
+
+    let named_args = walk_jsx_attributes(ctx, &element.attributes);
+    let children = walk_nodes(ctx, &element.children);
+
+    Some(Node::Component(Component {
+        path,
+        paren_token: Default::default(),
+        named_args,
+        children,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -348,9 +576,7 @@ fn text_node(content: &str) -> Node {
 /// `syn::parse_str::<Ident>` uses `Ident::parse`, which rejects keywords.
 /// The fallback uses `Ident::new` directly for keyword-safe identifiers.
 fn make_ident(name: &str) -> Ident {
-    syn::parse_str(name).unwrap_or_else(|_| {
-        Ident::new(name, Span::call_site())
-    })
+    syn::parse_str(name).unwrap_or_else(|_| Ident::new(name, Span::call_site()))
 }
 
 /// Constructs an `ElementName` from a tag name string.
@@ -364,7 +590,9 @@ fn make_element_name(tag: &str) -> ElementName {
 /// Constructs a normal HTML element with opening and closing tags, wrapped in Node.
 fn html_element(tag: &str, children: Nodes) -> Node {
     let attributes = Attributes::default();
-    Node::Element(Box::new(normal_element_with_attrs(tag, attributes, children)))
+    Node::Element(Box::new(normal_element_with_attrs(
+        tag, attributes, children,
+    )))
 }
 
 /// Constructs a normal HTML element with custom attributes.
@@ -447,23 +675,26 @@ fn create_attribute_bool(key: &str) -> Attribute {
 fn with_attributes(attrs: Vec<Attribute>) -> Attributes {
     Attributes {
         cx: None,
-        items: attrs
-            .into_iter()
-            .map(AttributeNode::Attribute)
-            .collect(),
+        items: attrs.into_iter().map(AttributeNode::Attribute).collect(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use quote::quote;
+    use syn::{Lit, LitBool};
+
+    use super::*;
 
     fn parse_and_walk(content: &str) -> Nodes {
+        parse_and_walk_ctx(&WalkContext::empty(), content)
+    }
+
+    fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
         let options = get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();
         match root {
-            markdown::mdast::Node::Root(r) => walk_nodes(&r.children),
+            markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children),
             _ => unreachable!(),
         }
     }
@@ -506,19 +737,22 @@ mod tests {
 
     #[test]
     fn walks_raw_html_via_writer() {
+        let ctx = WalkContext::empty();
         let options = get_parse_options();
-        let root =
-            markdown::to_mdast(r#"<div class="raw">Raw</div>"#, &options).unwrap();
+        let root = markdown::to_mdast(r#"<div class="raw">Raw</div>"#, &options).unwrap();
         let mut writer = ViewWriter::new();
         if let markdown::mdast::Node::Root(r) = root {
             for child in &r.children {
-                walk_to_writer(child, &mut writer);
+                walk_to_writer(&ctx, child, &mut writer);
             }
         }
         let tokens = writer.into_token_stream();
         let token_str = quote! { #tokens }.to_string();
         // The raw HTML should appear verbatim (not escaped as &lt;div&gt;).
-        assert!(token_str.contains("<div"), "should contain raw <div, got: {token_str}");
+        assert!(
+            token_str.contains("<div"),
+            "should contain raw <div, got: {token_str}"
+        );
         assert!(
             !token_str.contains("&lt;div"),
             "should NOT contain escaped &lt;div, got: {token_str}",
@@ -637,16 +871,18 @@ mod tests {
 
     #[test]
     fn mdx_to_view_produces_view() {
-        let view = mdx_to_view("# Test").expect("should parse valid markdown");
+        let ctx = WalkContext::empty();
+        let view = mdx_to_view(&ctx, "# Test").expect("should parse valid markdown");
         assert!(view.cx.is_none());
         assert!(!view.nodes.is_empty());
     }
 
     #[test]
     fn mdx_to_view_returns_error_on_invalid_input() {
+        let ctx = WalkContext::empty();
         // Verify the function returns Err instead of panicking.
         // (This input is valid markdown, but we test the return type.)
-        let result = mdx_to_view("# Valid heading");
+        let result = mdx_to_view(&ctx, "# Valid heading");
         assert!(result.is_ok());
         let view = result.unwrap();
         assert!(!view.nodes.is_empty());
@@ -801,10 +1037,7 @@ mod tests {
             assert!(img.is_some(), "should find <img> element");
             let img = img.unwrap();
             let attrs = img.attributes();
-            assert!(
-                !attrs.is_empty(),
-                "image should have attributes (src, alt)",
-            );
+            assert!(!attrs.is_empty(), "image should have attributes (src, alt)",);
         }
     }
 
@@ -1162,5 +1395,349 @@ mod tests {
             }
         }
         None
+    }
+
+    // ---- Phase 02: coerce_attr_value tests ----
+
+    #[test]
+    fn coerce_attr_value_bool_true() {
+        let expr = coerce_attr_value("true");
+        assert!(matches!(
+            expr,
+            Expr::Lit(syn::ExprLit {
+                lit: Lit::Bool(LitBool { value: true, .. }),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn coerce_attr_value_bool_false() {
+        let expr = coerce_attr_value("false");
+        assert!(matches!(
+            expr,
+            Expr::Lit(syn::ExprLit {
+                lit: Lit::Bool(LitBool { value: false, .. }),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn coerce_attr_value_int() {
+        let expr = coerce_attr_value("42");
+        assert!(
+            matches!(
+                expr,
+                Expr::Lit(syn::ExprLit {
+                    lit: Lit::Int(_),
+                    ..
+                })
+            ),
+            "expected LitInt"
+        );
+    }
+
+    #[test]
+    fn coerce_attr_value_float() {
+        let expr = coerce_attr_value("3.14");
+        assert!(
+            matches!(
+                expr,
+                Expr::Lit(syn::ExprLit {
+                    lit: Lit::Float(_),
+                    ..
+                })
+            ),
+            "expected LitFloat"
+        );
+    }
+
+    #[test]
+    fn coerce_attr_value_string() {
+        let expr = coerce_attr_value("hello");
+        if let Expr::Lit(l) = expr {
+            assert!(
+                matches!(l.lit, Lit::Str(s) if s.value() == "hello"),
+                "expected LitStr(\"hello\")"
+            );
+        } else {
+            panic!("expected Expr::Lit");
+        }
+    }
+
+    #[test]
+    fn coerce_attr_value_empty_string_stays_str() {
+        let expr = coerce_attr_value("");
+        assert!(
+            matches!(expr, Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) if s.value().is_empty()),
+            "empty string should coerce to LitStr(\"\")"
+        );
+    }
+
+    #[test]
+    fn coerce_attr_value_leading_zeros_stay_str() {
+        let expr = coerce_attr_value("007");
+        assert!(
+            matches!(expr, Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) if s.value() == "007"),
+            "leading zeros should stay as string, not coerce to int"
+        );
+    }
+
+    // ---- Phase 02: JSX attribute walking tests ----
+
+    #[test]
+    fn walk_jsx_attributes_bare() {
+        let ctx = WalkContext::empty();
+        let attr = markdown::mdast::MdxJsxAttribute {
+            name: "disabled".to_string(),
+            value: None,
+        };
+        let attrs = vec![markdown::mdast::AttributeContent::Property(attr)];
+        let result = walk_jsx_attributes(&ctx, &attrs);
+        assert_eq!(result.len(), 1);
+        let named_arg = &result[0];
+        assert_eq!(named_arg.ident.to_string(), "disabled");
+        assert!(
+            matches!(
+                &named_arg.value,
+                NamedArgValue::Expr(Expr::Lit(syn::ExprLit {
+                    lit: Lit::Bool(LitBool { value: true, .. }),
+                    ..
+                }))
+            ),
+            "bare attribute should coerce to true"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_attributes_key_value() {
+        let ctx = WalkContext::empty();
+        let attr = markdown::mdast::MdxJsxAttribute {
+            name: "label".to_string(),
+            value: Some(markdown::mdast::AttributeValue::Literal(
+                "hello".to_string(),
+            )),
+        };
+        let attrs = vec![markdown::mdast::AttributeContent::Property(attr)];
+        let result = walk_jsx_attributes(&ctx, &attrs);
+        assert_eq!(result.len(), 1);
+        let named_arg = &result[0];
+        assert_eq!(named_arg.ident.to_string(), "label");
+        assert!(
+            matches!(&named_arg.value, NamedArgValue::Expr(Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. })) if s.value() == "hello"),
+            "string attribute value should coerce to LitStr"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_attributes_skip_expression() {
+        let ctx = WalkContext::new(&[]);
+        let expr_attr = markdown::mdast::AttributeContent::Expression(
+            markdown::mdast::MdxJsxExpressionAttribute {
+                value: "...props".to_string(),
+                stops: vec![],
+            },
+        );
+        let result = walk_jsx_attributes(&ctx, &[expr_attr]);
+        assert!(result.is_empty(), "spread attributes should be skipped");
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should push error for spread attributes"
+        );
+    }
+
+    // ---- Phase 02: JSX element walking tests ----
+
+    #[test]
+    fn walk_jsx_element_unknown_component() {
+        let ctx = WalkContext::new(&[]);
+        let element = markdown::mdast::MdxJsxFlowElement {
+            children: vec![],
+            position: None,
+            name: Some("Unknown".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_element(&ctx, &element);
+        assert!(
+            result.is_none(),
+            "unregistered component should return None"
+        );
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should push error for unknown component"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_element_lowercase_is_html() {
+        let ctx = WalkContext::new(&[]);
+        let element = markdown::mdast::MdxJsxFlowElement {
+            children: vec![],
+            position: None,
+            name: Some("div".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_element(&ctx, &element);
+        assert!(
+            result.is_none(),
+            "lowercase JSX should return None (HTML, not component)"
+        );
+        let errors = ctx.errors.borrow();
+        assert!(errors.is_empty(), "lowercase should NOT push an error");
+    }
+
+    #[test]
+    fn walk_jsx_element_fragment() {
+        let ctx = WalkContext::new(&[]);
+        let element = markdown::mdast::MdxJsxFlowElement {
+            children: vec![],
+            position: None,
+            name: None, // fragment
+            attributes: vec![],
+        };
+        let result = walk_jsx_element(&ctx, &element);
+        assert!(result.is_none(), "fragment should return None");
+    }
+
+    #[test]
+    fn walk_jsx_element_registered_produces_component() {
+        let component_path: Path = syn::parse_quote!(components::callout);
+        let registry = vec![("Callout".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry);
+        let element = markdown::mdast::MdxJsxFlowElement {
+            children: vec![],
+            position: None,
+            name: Some("Callout".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_element(&ctx, &element);
+        assert!(
+            matches!(&result, Some(Node::Component(_))),
+            "registered component should produce Node::Component"
+        );
+        if let Some(Node::Component(comp)) = result {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "callout"
+            );
+            assert!(comp.named_args.is_empty());
+            assert!(comp.children.is_empty());
+        }
+    }
+
+    #[test]
+    fn walk_jsx_element_self_closing_empty_children() {
+        let component_path: Path = syn::parse_quote!(components::divider);
+        let registry = vec![("Divider".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry);
+        // Self-closing and closed tags both produce empty children in markdown-rs.
+        let element = markdown::mdast::MdxJsxFlowElement {
+            children: vec![], // empty
+            position: None,
+            name: Some("Divider".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_element(&ctx, &element);
+        assert!(
+            matches!(&result, Some(Node::Component(_))),
+            "self-closing component should produce Node::Component"
+        );
+        if let Some(Node::Component(comp)) = result {
+            assert!(
+                comp.children.is_empty(),
+                "self-closing should have empty children"
+            );
+        }
+    }
+
+    // ---- Phase 02: walk_node JSX dispatch tests ----
+
+    #[test]
+    fn walk_node_dispatches_mdx_jsx_flow_element() {
+        // markdown-rs only parses <Widget></Widget> as MdxJsxFlowElement.
+        // Self-closing <Widget /> is parsed as raw Html.
+        let component_path: Path = syn::parse_quote!(my::widget);
+        let registry = vec![("Widget".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry);
+        let nodes = parse_and_walk_ctx(&ctx, "<Widget></Widget>");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "walk_node should dispatch MdxJsxFlowElement to walk_jsx_element"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_text_element_registered_produces_component() {
+        // Walk a manually-constructed MdxJsxTextElement through walk_jsx_text_element.
+        // Note: markdown-rs only produces MdxJsxTextElement in specific parsing contexts;
+        // this test verifies the walker function works on the struct directly.
+        let component_path: Path = syn::parse_quote!(inline::badge);
+        let registry = vec![("Badge".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry);
+        let element = markdown::mdast::MdxJsxTextElement {
+            children: vec![],
+            position: None,
+            name: Some("Badge".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_text_element(&ctx, &element);
+        assert!(
+            matches!(&result, Some(Node::Component(_))),
+            "registered text JSX should produce Node::Component"
+        );
+    }
+
+    // ---- Phase 02: tracer integration test ----
+
+    #[test]
+    fn tracer_component_round_trip() {
+        // End-to-end tracer: parse MDX with a component, walk it, assert
+        // the Component node has the correct path, named_args, and children.
+        //
+        // Note: markdown-rs only parses empty JSX tag pairs as MdxJsxFlowElement
+        // (e.g. <Callout></Callout>). Tags with content like <Callout>hello</Callout>
+        // are parsed as raw HTML fragments. This is a parser limitation addressed
+        // by integration tests in the macro crate which use .mdx fixture files.
+        let component_path: Path = syn::parse_quote!(components::callout);
+        let registry = vec![("Callout".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry);
+        let nodes = parse_and_walk_ctx(&ctx, r#"<Callout type="info"></Callout>"#);
+        assert_eq!(nodes.len(), 1);
+        let node = &nodes[0];
+
+        // The root-level JSX produces a Component node.
+        assert!(
+            matches!(node, Node::Component(_)),
+            "expected Node::Component"
+        );
+
+        if let Node::Component(comp) = node {
+            // Path matches registry entry.
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "callout"
+            );
+
+            // Has one NamedArg: type = "info" (string literal).
+            assert_eq!(comp.named_args.len(), 1);
+            assert_eq!(comp.named_args[0].ident.to_string(), "type");
+            assert!(
+                matches!(
+                    &comp.named_args[0].value,
+                    NamedArgValue::Expr(Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. })) if s.value() == "info"
+                ),
+                "type should be string literal \"info\""
+            );
+
+            // Empty children (self-closing / empty tag pair).
+            assert!(
+                comp.children.is_empty(),
+                "empty tag pair should have no children"
+            );
+        }
     }
 }
