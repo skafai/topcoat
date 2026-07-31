@@ -1,3 +1,5 @@
+#![allow(clippy::approx_constant)]
+
 use serde::Deserialize;
 use topcoat::{context::CxTestBuilder, mdx::compile_mdx};
 

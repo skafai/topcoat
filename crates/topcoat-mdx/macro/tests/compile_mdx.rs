@@ -1,3 +1,5 @@
+#![allow(clippy::approx_constant)]
+
 use topcoat::{context::CxTestBuilder, mdx::compile_mdx};
 
 // ---- Tracer fixture (from Plan 01) ----
