@@ -354,7 +354,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 
 // ---------------------------------------------------------------------------
 // mdx_page! proc-macro
-// -----------------------------------------------------------------private
+// ---------------------------------------------------------------------------
 
 /// Registers a `.mdx` or `.md` file as a page route with optional frontmatter.
 ///
@@ -752,10 +752,9 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     for entry in ignore::Walk::new(&canonical_scan_dir) {
         let entry = match entry {
             Ok(e) => e,
-            Err(e) => {
+            Err(_) => {
                 // Skip entries that cannot be read (e.g., permission errors).
                 // These are non-fatal — just log and continue.
-                let _ = e;
                 continue;
             }
         };
@@ -766,8 +765,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         let is_target = file_path
             .extension()
             .and_then(|s| s.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("mdx") || ext.eq_ignore_ascii_case("md"))
-            .unwrap_or(false);
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mdx") || ext.eq_ignore_ascii_case("md"));
         if !is_target {
             continue;
         }
