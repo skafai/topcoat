@@ -188,6 +188,54 @@ struct CompiledMdxResult {
     view_tokens: proc_macro2::TokenStream,
 }
 
+/// Shared inner logic: parse markdown content, extract frontmatter, walk mdast.
+///
+/// Used by both `compile_mdx_file` (compile_mdx!, mdx_page!) and
+/// `generate_page_registration` (mdx_pages!). The `label` parameter controls
+/// the prefix in error messages.
+fn parse_and_walk_mdx(
+    components: &[(String, SynPath)],
+    content: &str,
+    label: &str,
+    span: Span,
+) -> Result<CompiledMdxResult, syn::Error> {
+    // Parse with markdown-rs.
+    let options = get_parse_options();
+    let root = markdown::to_mdast(content, &options).map_err(|e| {
+        syn::Error::new(span, format!("{label} parse error: {e}"))
+    })?;
+
+    // Extract frontmatter from root node.
+    let frontmatter_yaml = extract_frontmatter(&root);
+
+    // Build WalkContext with component registry and error buffer.
+    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, span);
+
+    // Walk mdast into ViewWriter, skipping the frontmatter node.
+    let mut writer = ViewWriter::new();
+    if let markdown::mdast::Node::Root(r) = root {
+        let start_idx = usize::from(frontmatter_yaml.is_some());
+        for child in r.children.iter().skip(start_idx) {
+            walk_to_writer(&ctx, child, &mut writer);
+        }
+    }
+
+    // Drain walker error buffer into syn::Error diagnostics.
+    let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
+    if !errors.is_empty() {
+        let mut combined_err = syn::Error::new(span, errors[0].clone());
+        for err in &errors[1..] {
+            combined_err.combine(syn::Error::new(span, err.clone()));
+        }
+        return Err(combined_err);
+    }
+
+    Ok(CompiledMdxResult {
+        frontmatter_yaml,
+        view_tokens: writer.into_token_stream(),
+    })
+}
+
 /// Shared logic: resolve path, read file, parse, extract frontmatter, walk.
 fn compile_mdx_file(
     components: &[(String, SynPath)],
@@ -227,41 +275,7 @@ fn compile_mdx_file(
         syn::Error::new(span, format!("compile_mdx! cannot read '{path_str}': {e}"))
     })?;
 
-    // Parse with markdown-rs.
-    let options = get_parse_options();
-    let root = markdown::to_mdast(&content, &options).map_err(|e| {
-        syn::Error::new(span, format!("compile_mdx! parse error in '{path_str}': {e}"))
-    })?;
-
-    // Extract frontmatter from root node.
-    let frontmatter_yaml = extract_frontmatter(&root);
-
-    // Build WalkContext with component registry and error buffer.
-    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, span);
-
-    // Walk mdast into ViewWriter, skipping the YAML frontmatter node.
-    let mut writer = ViewWriter::new();
-    if let markdown::mdast::Node::Root(r) = root {
-        let start_idx = usize::from(frontmatter_yaml.is_some());
-        for child in r.children.iter().skip(start_idx) {
-            walk_to_writer(&ctx, child, &mut writer);
-        }
-    }
-
-    // Drain walker error buffer into syn::Error diagnostics.
-    let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
-    if !errors.is_empty() {
-        let mut combined_err = syn::Error::new(span, errors[0].clone());
-        for err in &errors[1..] {
-            combined_err.combine(syn::Error::new(span, err.clone()));
-        }
-        return Err(combined_err);
-    }
-
-    Ok(CompiledMdxResult {
-        frontmatter_yaml,
-        view_tokens: writer.into_token_stream(),
-    })
+    parse_and_walk_mdx(components, &content, "compile_mdx!", span)
 }
 
 // ---------------------------------------------------------------------------
@@ -584,41 +598,8 @@ fn generate_page_registration(
         )
     })?;
 
-    // Parse with markdown-rs.
-    let options = get_parse_options();
-    let root = markdown::to_mdast(&content, &options).map_err(|e| {
-        syn::Error::new(
-            span,
-            format!("mdx_pages! parse error in '{path_display}': {e}"),
-        )
-    })?;
-
-    // Extract frontmatter from root node.
-    let frontmatter_yaml = extract_frontmatter(&root);
-
-    // Build WalkContext with empty component registry.
-    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(&[], span);
-
-    // Walk mdast into ViewWriter, skipping the YAML frontmatter node.
-    let mut writer = ViewWriter::new();
-    if let markdown::mdast::Node::Root(r) = root {
-        let start_idx = usize::from(frontmatter_yaml.is_some());
-        for child in r.children.iter().skip(start_idx) {
-            topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
-        }
-    }
-
-    // Drain walker error buffer into syn::Error diagnostics.
-    let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
-    if !errors.is_empty() {
-        let mut combined_err = syn::Error::new(span, errors[0].clone());
-        for err in &errors[1..] {
-            combined_err.combine(syn::Error::new(span, err.clone()));
-        }
-        return Err(combined_err);
-    }
-
-    let view_tokens = writer.into_token_stream();
+    let CompiledMdxResult { view_tokens, .. } =
+        parse_and_walk_mdx(&[], &content, &format!("mdx_pages!"), span)?;
 
     // Generate unique identifiers from file stem.
     // Use snake_case for identifiers (valid Rust) but the route path
