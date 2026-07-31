@@ -10,18 +10,13 @@ keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
 
-[features]
-default = ["macro"]
-macro = ["dep:topcoat-mdx-macro"]
-page = ["macro", "dep:topcoat-core", "dep:topcoat-router", "dep:serde", "dep:inventory", "dep:anyhow"]
-
 [dependencies]
-topcoat-mdx-macro = { workspace = true, optional = true }
-topcoat-core = { workspace = true, optional = true }
-topcoat-router = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
-inventory = { workspace = true, optional = true }
-anyhow = { workspace = true, optional = true }
+topcoat-mdx-macro.workspace = true
+topcoat-core.workspace = true
+topcoat-router.workspace = true
+serde.workspace = true
+inventory.workspace = true
+anyhow.workspace = true
 
 [dev-dependencies]
 topcoat = { workspace = true, features = ["mdx"] }

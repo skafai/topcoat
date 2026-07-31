@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use topcoat::{compile_mdx, context::CxTestBuilder};
+use topcoat::{context::CxTestBuilder, mdx::compile_mdx};
 
 // ---- Frontmatter fixture ----
 

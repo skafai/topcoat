@@ -7,19 +7,11 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-extern crate self as topcoat_mdx;
-
-#[cfg(feature = "macro")]
-pub use topcoat_mdx_macro::compile_mdx;
-
-#[cfg(feature = "page")]
-pub use topcoat_mdx_macro::mdx_page;
-
-#[cfg(feature = "page")]
 mod frontmatter;
 
-#[cfg(feature = "page")]
 pub use frontmatter::Frontmatter;
+pub use topcoat_mdx_macro::compile_mdx;
+pub use topcoat_mdx_macro::mdx_page;
 
 /// Declares a component registry mapping MDX tag names to Rust component paths.
 ///

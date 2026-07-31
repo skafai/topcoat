@@ -117,7 +117,6 @@ mdx = [
 	"dep:topcoat-mdx",
 	"dep:topcoat-mdx-macro",
 	"router",
-	"topcoat-mdx/page",
 ]
 multipart = [
 	"router",
