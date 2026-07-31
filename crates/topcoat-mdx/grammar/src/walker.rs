@@ -56,6 +56,24 @@ impl Default for WalkContext<'_> {
     }
 }
 
+/// Extracts YAML frontmatter from the mdast root node.
+///
+/// Only the first child of the root can be frontmatter (Pitfall 1: YAML
+/// frontmatter must appear at byte offset 0 in the source document).
+/// Returns `Some(yaml_string)` when a `Node::Yaml` is the first root child,
+/// `None` otherwise.
+#[must_use]
+pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<String> {
+    let markdown::mdast::Node::Root(r) = root else {
+        return None;
+    };
+    let first = r.children.first()?;
+    let markdown::mdast::Node::Yaml(y) = first else {
+        return None;
+    };
+    Some(y.value.clone())
+}
+
 /// Walks an mdast node tree into a Topcoat `view!` `View`.
 ///
 /// Parses the MDX content using `markdown-rs` with GFM + MDX + frontmatter

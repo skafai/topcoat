@@ -12,6 +12,15 @@ extern crate self as topcoat_mdx;
 #[cfg(feature = "macro")]
 pub use topcoat_mdx_macro::compile_mdx;
 
+#[cfg(feature = "page")]
+pub use topcoat_mdx_macro::mdx_page;
+
+#[cfg(feature = "page")]
+mod frontmatter;
+
+#[cfg(feature = "page")]
+pub use frontmatter::Frontmatter;
+
 /// Declares a component registry mapping MDX tag names to Rust component paths.
 ///
 /// Produces a braced block of `Ident => Path` pairs that `compile_mdx!` parses
