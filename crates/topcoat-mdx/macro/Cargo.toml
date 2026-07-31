@@ -19,9 +19,14 @@ proc-macro = true
 markdown = "1.0"
 topcoat-mdx-grammar.workspace = true
 topcoat-view-grammar.workspace = true
+topcoat-core-grammar.workspace = true
+proc-macro-crate.workspace = true
 
 proc-macro2.workspace = true
 quote.workspace = true
+serde = "1"
+serde-saphyr = "1.0"
+serde-value = "0.7"
 syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
