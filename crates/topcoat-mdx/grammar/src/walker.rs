@@ -74,7 +74,7 @@ pub enum FrontmatterFormat {
 /// Returns `Some((value_string, format))` when a `Node::Yaml` or `Node::Toml`
 /// is the first root child, `None` otherwise.
 ///
-/// Note: MdxjsEsm frontmatter is not extracted — it contains JavaScript
+/// Note: `MdxjsEsm` frontmatter is not extracted — it contains JavaScript
 /// expressions that are not deserializable as Rust types.
 #[must_use]
 pub fn extract_frontmatter(
