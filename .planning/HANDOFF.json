@@ -1,0 +1,59 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-31T19:11:50Z",
+  "phase": "03",
+  "phase_name": "frontmatter-and-page-routes",
+  "phase_dir": ".planning/phases/03-frontmatter-and-page-routes",
+  "plan": 2,
+  "task": 2,
+  "total_tasks": 2,
+  "status": "review_complete",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Frontmatter Pipeline",
+      "status": "done",
+      "commit": "0d001e8"
+    },
+    {
+      "id": 2,
+      "name": "mdx_pages! Auto-Discovery",
+      "status": "done",
+      "commit": "d1f8597"
+    }
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "serde-saphyr for YAML, toml crate for TOML",
+      "rationale": "Format-aware dispatch based on FrontmatterFormat enum",
+      "phase": "03"
+    },
+    {
+      "decision": "ignore::Walk over walkdir",
+      "rationale": ".gitignore compliance for content scanning",
+      "phase": "03"
+    },
+    {
+      "decision": "Kebab-case on directory segments too",
+      "rationale": "Consistent URL paths regardless of filesystem casing",
+      "phase": "03"
+    },
+    {
+      "decision": "Block ALL data: URIs in is_safe_url",
+      "rationale": "data:image/svg+xml can execute JS via SVG event handlers (XSS bypass)",
+      "phase": "01"
+    },
+    {
+      "decision": "Use (mdx) commit scope",
+      "rationale": "Matches existing convention (router), (asset), (runtime); GSD plan labels are internal artifacts",
+      "phase": "01"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Consider opening PR for topcoat-mdx-support branch",
+  "context_notes": "Phase 03 complete. Deep code review finished with 3 iterations of --auto fix loop. All 13 original findings resolved. Additional clippy pedantic warnings cleaned up. Working tree clean, all 123 tests pass."
+}
