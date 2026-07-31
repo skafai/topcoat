@@ -21,7 +21,7 @@ use topcoat_core_grammar::paths::{
 };
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
-    walker::{extract_frontmatter, walk_to_writer},
+    walker::{extract_frontmatter, walk_to_writer, FrontmatterFormat},
 };
 use topcoat_view_grammar::view::ViewWriter;
 
@@ -188,9 +188,13 @@ impl Parse for MdxPagesInput {
 // Common compile logic shared by compile_mdx! and mdx_page!
 // ---------------------------------------------------------------------------
 
-/// Result of compiling an MDX file: frontmatter YAML (if any) and view tokens.
+/// Result of compiling an MDX file: frontmatter content (if any) and view tokens.
+///
+/// The frontmatter can be YAML or TOML format; the format is tracked so
+/// [`mdx_page!`] can dispatch to the correct deserializer.
 struct CompiledMdxResult {
-    frontmatter_yaml: Option<String>,
+    /// Raw frontmatter content and its format (YAML or TOML).
+    frontmatter_content: Option<(String, FrontmatterFormat)>,
     view_tokens: proc_macro2::TokenStream,
 }
 
@@ -211,7 +215,7 @@ fn parse_and_walk_mdx(
         .map_err(|e| syn::Error::new(span, format!("{label} parse error: {e}")))?;
 
     // Extract frontmatter from root node.
-    let frontmatter_yaml = extract_frontmatter(&root);
+    let frontmatter_content = extract_frontmatter(&root);
 
     // Build WalkContext with component registry and error buffer.
     let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, span);
@@ -219,7 +223,7 @@ fn parse_and_walk_mdx(
     // Walk mdast into ViewWriter, skipping the frontmatter node.
     let mut writer = ViewWriter::new();
     if let markdown::mdast::Node::Root(r) = root {
-        let start_idx = usize::from(frontmatter_yaml.is_some());
+        let start_idx = usize::from(frontmatter_content.is_some());
         for child in r.children.iter().skip(start_idx) {
             walk_to_writer(&ctx, child, &mut writer);
         }
@@ -236,7 +240,7 @@ fn parse_and_walk_mdx(
     }
 
     Ok(CompiledMdxResult {
-        frontmatter_yaml,
+        frontmatter_content,
         view_tokens: writer.into_token_stream(),
     })
 }
@@ -351,7 +355,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 
     // If frontmatter exists, emit it as a const alongside the view tokens.
     // Wrap in a block so the const is scoped and the block evaluates to the view.
-    if let Some(yaml) = result.frontmatter_yaml {
+    if let Some((content, _format)) = result.frontmatter_content {
         // Derive a unique const name from the file stem (uppercased per Rust conventions).
         let file_stem = Path::new(&path_str)
             .file_stem()
@@ -361,7 +365,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
             &format!("__MDX_FRONTMATTER_{}", file_stem.to_uppercase()),
             lit_str.span(),
         );
-        let yaml_lit = LitStr::new(&yaml, lit_str.span());
+        let yaml_lit = LitStr::new(&content, lit_str.span());
 
         quote! {
             {
@@ -439,25 +443,30 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
     // Frontmatter const + extension insertion.
     let fm_const_and_insert =
-        if let (Some(yaml), Some(fm_type)) = (&result.frontmatter_yaml, &input.frontmatter_type) {
+        if let (Some((content, format)), Some(fm_type)) =
+            (&result.frontmatter_content, &input.frontmatter_type)
+        {
             let fm_const_name = Ident::new(
                 &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
                 file_path.span(),
             );
 
-            // Deserialize YAML at compile time into serde_value::Value, then
-            // convert to a syn::Expr of the target type.
-            let deserialized = match serde_saphyr::from_str::<serde_value::Value>(yaml) {
-                Ok(v) => v,
-                Err(e) => {
-                    return syn::Error::new(
-                        file_path.span(),
-                        format!("mdx_page! failed to deserialize frontmatter YAML: {e}"),
-                    )
-                    .to_compile_error()
-                    .into();
-                }
-            };
+            // Deserialize frontmatter at compile time into serde_value::Value,
+            // dispatching on format (YAML via serde-saphyr, TOML via toml).
+            let deserialized: serde_value::Value =
+                if matches!(format, FrontmatterFormat::Yaml) {
+                    serde_saphyr::from_str(content).unwrap_or_else(|e| {
+                        panic!(
+                            "mdx_page! failed to deserialize frontmatter YAML: {e}"
+                        )
+                    })
+                } else {
+                    toml::from_str(content).unwrap_or_else(|e| {
+                        panic!(
+                            "mdx_page! failed to deserialize frontmatter TOML: {e}"
+                        )
+                    })
+                };
 
             match value_to_expr(&deserialized, Some(fm_type), file_path.span()) {
                 Ok(expr) => {
@@ -476,7 +485,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
             quote! {}
         };
 
-    let fm_insert = if result.frontmatter_yaml.is_some() && input.frontmatter_type.is_some() {
+    let fm_insert = if result.frontmatter_content.is_some() && input.frontmatter_type.is_some() {
         let fm_const_name = Ident::new(
             &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
             file_path.span(),
@@ -829,6 +838,14 @@ fn value_to_expr(
         }
         serde_value::Value::Map(entries) => {
             // Convert map entries to struct-like field initializers.
+            // When `root_type` is `Some`, the top-level Map is rendered as a
+            // typed struct literal (e.g. `BlogMeta { title, date }`).
+            // Nested Maps (recursive calls with `root_type = None`) fall back
+            // to a placeholder `_ { ... }` path, which is only valid inside
+            // `parse_quote!` — the expression won't compile as standalone Rust.
+            // This is acceptable because frontmatter deserialization always
+            // passes the root type, and nested maps are rendered as field
+            // values (vecs, strings, etc.) rather than struct literals.
             let mut named_fields = Vec::new();
             for (key, val) in entries {
                 let serde_value::Value::String(field_name) = key else {

@@ -26,6 +26,7 @@ quote.workspace = true
 serde = "1"
 serde-saphyr = "1.0"
 serde-value = "0.7"
+toml = "0.8"
 heck = { workspace = true }
 ignore = { workspace = true }
 syn = { workspace = true, features = ["full"] }

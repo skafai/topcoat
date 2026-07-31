@@ -57,24 +57,36 @@ impl Default for WalkContext<'_> {
     }
 }
 
+/// Format of the frontmatter extracted from an MDX document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum FrontmatterFormat {
+    /// YAML frontmatter (between `---` delimiters).
+    Yaml,
+    /// TOML frontmatter (between `+++` delimiters).
+    Toml,
+}
+
 /// Extracts YAML or TOML frontmatter from the mdast root node.
 ///
 /// Only the first child of the root can be frontmatter (Pitfall 1: YAML
 /// frontmatter must appear at byte offset 0 in the source document).
-/// Returns `Some(value_string)` when a `Node::Yaml` or `Node::Toml` is the
-/// first root child, `None` otherwise.
+/// Returns `Some((value_string, format))` when a `Node::Yaml` or `Node::Toml`
+/// is the first root child, `None` otherwise.
 ///
 /// Note: MdxjsEsm frontmatter is not extracted — it contains JavaScript
 /// expressions that are not deserializable as Rust types.
 #[must_use]
-pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<String> {
+pub fn extract_frontmatter(
+    root: &markdown::mdast::Node,
+) -> Option<(String, FrontmatterFormat)> {
     let markdown::mdast::Node::Root(r) = root else {
         return None;
     };
     let first = r.children.first()?;
     match first {
-        markdown::mdast::Node::Yaml(y) => Some(y.value.clone()),
-        markdown::mdast::Node::Toml(t) => Some(t.value.clone()),
+        markdown::mdast::Node::Yaml(y) => Some((y.value.clone(), FrontmatterFormat::Yaml)),
+        markdown::mdast::Node::Toml(t) => Some((t.value.clone(), FrontmatterFormat::Toml)),
         _ => None,
     }
 }
@@ -748,34 +760,34 @@ mod tests {
     #[test]
     fn extract_frontmatter_yaml_present() {
         let root = parse_to_root("---\ntitle: Hello\ndate: 2024-01-01\n---\n\n# Body");
-        let yaml = extract_frontmatter(&root);
-        assert!(yaml.is_some(), "should extract YAML frontmatter");
-        let yaml = yaml.unwrap();
-        assert!(yaml.contains("title"), "should contain title field");
-        assert!(yaml.contains("Hello"), "should contain title value");
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some(), "should extract YAML frontmatter");
+        let (content, format) = fm.unwrap();
+        assert!(matches!(format, FrontmatterFormat::Yaml));
+        assert!(content.contains("title"), "should contain title field");
+        assert!(content.contains("Hello"), "should contain title value");
     }
 
     #[test]
     fn extract_frontmatter_none() {
         let root = parse_to_root("# Heading\n\nPlain text");
-        let yaml = extract_frontmatter(&root);
-        assert!(yaml.is_none(), "should return None when no frontmatter");
+        assert!(extract_frontmatter(&root).is_none(), "should return None when no frontmatter");
     }
 
     #[test]
     fn extract_frontmatter_heading_first() {
         let root = parse_to_root("# heading");
-        let yaml = extract_frontmatter(&root);
-        assert!(yaml.is_none(), "heading-first doc should have no frontmatter");
+        assert!(extract_frontmatter(&root).is_none(), "heading-first doc should have no frontmatter");
     }
 
     #[test]
     fn extract_frontmatter_only_frontmatter() {
         let root = parse_to_root("---\nkey: value\n---");
-        let yaml = extract_frontmatter(&root);
-        assert!(yaml.is_some(), "should extract YAML even with no body");
-        let yaml = yaml.unwrap();
-        assert!(yaml.contains("key"), "should contain the YAML content");
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some(), "should extract YAML even with no body");
+        let (content, format) = fm.unwrap();
+        assert!(matches!(format, FrontmatterFormat::Yaml));
+        assert!(content.contains("key"), "should contain the YAML content");
     }
 
     #[test]
@@ -785,9 +797,10 @@ mod tests {
         );
         let fm = extract_frontmatter(&root);
         assert!(fm.is_some(), "should extract TOML frontmatter");
-        let fm = fm.unwrap();
-        assert!(fm.contains("title"), "should contain title field");
-        assert!(fm.contains("Hello"), "should contain title value");
+        let (content, format) = fm.unwrap();
+        assert!(matches!(format, FrontmatterFormat::Toml));
+        assert!(content.contains("title"), "should contain title field");
+        assert!(content.contains("Hello"), "should contain title value");
     }
 
     #[test]
