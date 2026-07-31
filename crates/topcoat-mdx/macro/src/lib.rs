@@ -524,13 +524,14 @@ fn derive_route_path(
         .unwrap_or(file_path)
         .to_string_lossy();
 
-    // Remove .mdx extension.
+    // Remove .mdx or .md extension.
     let mut route = relative.into_owned();
-    if std::path::Path::new(&route)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("mdx"))
-    {
-        route.truncate(route.len() - 4);
+    if let Some(ext) = std::path::Path::new(&route).extension().and_then(|e| e.to_str()) {
+        if ext.eq_ignore_ascii_case("mdx") {
+            route.truncate(route.len() - 4);
+        } else if ext.eq_ignore_ascii_case("md") {
+            route.truncate(route.len() - 2);
+        }
     }
 
     // Kebab-case the filename stem (last path component).
@@ -758,8 +759,13 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
 
         let file_path = entry.path();
 
-        // Only process .mdx files.
-        if file_path.extension().and_then(|s| s.to_str()) != Some("mdx") {
+        // Only process .mdx and .md files.
+        let is_target = file_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("mdx") || ext.eq_ignore_ascii_case("md"))
+            .unwrap_or(false);
+        if !is_target {
             continue;
         }
 
