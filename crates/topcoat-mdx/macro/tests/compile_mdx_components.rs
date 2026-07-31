@@ -299,3 +299,241 @@ After"#;
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task 2: Integration test fixtures — comprehensive component coverage
+// ---------------------------------------------------------------------------
+
+// --- components_nested: component containing component ---
+
+mod components_nested {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! {
+                NestedOuter => mock::nested_outer,
+                NestedInner => mock::nested_inner,
+            },
+            "tests/fixtures/components_nested.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_nested_components() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! {
+                NestedOuter => mock::nested_outer,
+                NestedInner => mock::nested_inner,
+            },
+            "tests/fixtures/components_nested.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        assert!(
+            html.contains("mdx-nested-outer"),
+            "should have outer component. Got:\n{html}"
+        );
+        assert!(
+            html.contains("mdx-nested-inner"),
+            "should have inner component. Got:\n{html}"
+        );
+    }
+}
+
+// --- components_self_closing: empty tags and html ---
+
+mod components_self_closing {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Divider => mock::divider },
+            "tests/fixtures/components_self_closing.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_empty_component_and_html() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Divider => mock::divider },
+            "tests/fixtures/components_self_closing.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        // Empty tag pair <Divider></Divider> should produce component output.
+        assert!(
+            html.contains("mdx-divider"),
+            "should have divider component. Got:\n{html}"
+        );
+        // <hr> raw HTML should pass through.
+        assert!(
+            html.contains("<hr>"),
+            "should have <hr> HTML passthrough. Got:\n{html}"
+        );
+    }
+}
+
+// --- components_bare_attrs: bare attributes ---
+
+mod components_bare_attrs {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! { BareAttr => mock::bare_attr },
+            "tests/fixtures/components_bare_attrs.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_bare_attributes() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! { BareAttr => mock::bare_attr },
+            "tests/fixtures/components_bare_attrs.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        // Bare attribute `dismissible` should coerce to true.
+        assert!(
+            html.contains(r#"data-dismissible="true""#),
+            "bare attribute should coerce to true. Got:\n{html}"
+        );
+        // Explicit "false" should coerce to false.
+        assert!(
+            html.contains(r#"data-dismissible="false""#),
+            "explicit false should stay false. Got:\n{html}"
+        );
+    }
+}
+
+// --- components_prop_types: all coercion types ---
+
+mod components_prop_types {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Config => mock::config },
+            "tests/fixtures/components_prop_types.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_all_prop_types() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Config => mock::config },
+            "tests/fixtures/components_prop_types.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        assert!(
+            html.contains("mdx-config"),
+            "should have config component. Got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-enabled="true""#),
+            "bool coercion. Got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-count="42""#),
+            "int coercion. Got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-ratio="3.14""#),
+            "float coercion. Got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-label="hello""#),
+            "string coercion. Got:\n{html}"
+        );
+    }
+}
+
+// --- components_mixed_content: markdown + components at same level ---
+
+mod components_mixed_content {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Badge => mock::badge },
+            "tests/fixtures/components_mixed_content.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_mixed_content() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! { Badge => mock::badge },
+            "tests/fixtures/components_mixed_content.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        // Should have markdown heading and paragraphs.
+        assert!(html.contains("<h1>"), "should have heading. Got:\n{html}");
+        assert!(html.contains("<p>"), "should have paragraphs. Got:\n{html}");
+        // Should have the Badge component.
+        assert!(
+            html.contains("mdx-badge"),
+            "should have badge component. Got:\n{html}"
+        );
+    }
+}
+
+// --- components_child_content: component wrapping child component ---
+
+mod components_child_content {
+    use super::*;
+
+    #[tokio::test]
+    async fn compiles() {
+        let cx = CxTestBuilder::new().build();
+        let _view = compile_mdx_with_cx!(cx =>
+            mdx_components! {
+                Wrapper => mock::wrapper,
+                Badge => mock::badge,
+            },
+            "tests/fixtures/components_child_content.mdx"
+        );
+    }
+
+    #[tokio::test]
+    async fn renders_child_content() {
+        let cx = CxTestBuilder::new().build();
+        let view = compile_mdx_with_cx!(cx =>
+            mdx_components! {
+                Wrapper => mock::wrapper,
+                Badge => mock::badge,
+            },
+            "tests/fixtures/components_child_content.mdx"
+        ).expect("view should render successfully");
+        let html = view.render(&cx);
+
+        // Wrapper should render its outer section.
+        assert!(
+            html.contains("mdx-wrapper"),
+            "should have wrapper component. Got:\n{html}"
+        );
+        // Badge should appear as child content inside the wrapper.
+        assert!(
+            html.contains("mdx-badge"),
+            "should have badge child component. Got:\n{html}"
+        );
+    }
+}
