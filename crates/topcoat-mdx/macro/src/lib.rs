@@ -1,8 +1,8 @@
 //! Proc-macro crate for `topcoat-mdx`.
 //!
-//! Provides the `compile_mdx!` macro that reads `.mdx` files at compile time,
+//! Provides the `compile_mdx!` macro that reads `.mdx` or `.md` files at compile time,
 //! parses them with `markdown-rs`, walks the mdast into `view!` AST nodes,
-//! and emits tokens. Also provides `mdx_page!` for registering `.mdx` files
+//! and emits tokens. Also provides `mdx_page!` for registering `.mdx` or `.md` files
 //! as page routes with frontmatter support.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -268,11 +268,11 @@ fn compile_mdx_file(
 // compile_mdx! proc-macro
 // ---------------------------------------------------------------------------
 
-/// Compiles a `.mdx` file into a Topcoat `view!` AST.
+/// Compiles a `.mdx` or `.md` file into a Topcoat `view!` AST.
 ///
 /// # Arguments
 ///
-/// * `path` - A string literal pointing to the `.mdx` file, relative to `CARGO_MANIFEST_DIR`.
+/// * `path` - A string literal pointing to the `.mdx` or `.md` file, relative to `CARGO_MANIFEST_DIR`.
 /// * `components` (optional) - A component registry declared via `mdx_components!{...}`.
 ///
 /// # Examples
@@ -356,13 +356,13 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 // mdx_page! proc-macro
 // -----------------------------------------------------------------private
 
-/// Registers a `.mdx` file as a page route with optional frontmatter.
+/// Registers a `.mdx` or `.md` file as a page route with optional frontmatter.
 ///
 /// # Arguments
 ///
 /// * `route_path` - The URL path for this page (e.g. `"/blog/hello"`).
-/// * `file_path` - Path to the `.mdx` file, relative to `CARGO_MANIFEST_DIR`.
-/// * `frontmatter = Type` (optional) - The Rust type to deserialize the YAML frontmatter into.
+/// * `file_path` - Path to the `.mdx` or `.md` file, relative to `CARGO_MANIFEST_DIR`.
+/// * `frontmatter = Type` (optional) - The Rust type to deserialize the YAML or TOML frontmatter into.
 ///
 /// # Examples
 ///
@@ -511,7 +511,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 // mdx_pages! proc-macro
 // ---------------------------------------------------------------------------
 
-/// Derives a route path for a discovered `.mdx` file.
+/// Derives a route path for a discovered `.mdx` or `.md` file.
 ///
 /// Given the scan directory, the resolved file path, and an optional prefix,
 /// computes the route path: applies the prefix, then appends the relative
@@ -560,7 +560,7 @@ fn derive_route_path(
     }
 }
 
-/// Generates page registration tokens for a single `.mdx` file.
+/// Generates page registration tokens for a single `.mdx` or `.md` file.
 ///
 /// Mirrors the logic in `mdx_page!` but without frontmatter type arguments
 /// (since `mdx_pages!` does not carry per-file type declarations).
@@ -666,18 +666,18 @@ fn generate_page_registration(
     })
 }
 
-/// Auto-discovers `.mdx` files in a directory and registers each as a page route.
+/// Auto-discovers `.mdx` and `.md` files in a directory and registers each as a page route.
 ///
 /// # Arguments
 ///
 /// * `directory_path` - A string literal pointing to a directory, relative to
-///   `CARGO_MANIFEST_DIR`. All `.mdx` files within this directory are scanned.
+///   `CARGO_MANIFEST_DIR`. All `.mdx` and `.md` files within this directory are scanned.
 /// * `prefix = "/path"` (optional) - A route path prefix prepended to each derived route.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// // Register all .mdx files under content/blog/ with /blog prefix:
+/// // Register all .mdx and .md files under content/blog/ with /blog prefix:
 /// mdx_pages!("content/blog", prefix = "/blog");
 ///
 /// // Register without prefix:
