@@ -207,7 +207,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     };
 
     // Build WalkContext with component registry and error buffer.
-    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(&components);
+    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(&components, lit_str.span());
 
     // Walk mdast into ViewWriter.
     let mut writer = ViewWriter::new();

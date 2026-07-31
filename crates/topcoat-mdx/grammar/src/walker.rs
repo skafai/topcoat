@@ -27,22 +27,27 @@ pub struct WalkContext<'a> {
     /// Error strings collected during walking. The macro layer (Plan 02)
     /// drains this buffer and converts each entry into a `syn::Error`.
     pub errors: RefCell<Vec<String>>,
+    /// Span to use for generated literals. Prefer the span from the
+    /// `compile_mdx!` file-path argument so diagnostics point to the
+    /// invocation site rather than `call_site()`.
+    pub span: Span,
 }
 
 impl<'a> WalkContext<'a> {
-    /// Create a new walk context with the given component registry.
+    /// Create a new walk context with the given component registry and span.
     #[must_use]
-    pub fn new(components: &'a [(String, Path)]) -> Self {
+    pub fn new(components: &'a [(String, Path)], span: Span) -> Self {
         Self {
             components,
             errors: RefCell::new(Vec::new()),
+            span,
         }
     }
 
     /// Create an empty-context walker (no component registry).
     #[must_use]
     pub fn empty() -> Self {
-        Self::new(&[])
+        Self::new(&[], Span::call_site())
     }
 }
 
@@ -418,8 +423,12 @@ fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -> Node {
 /// pure floats -> `LitFloat`, everything else -> `LitStr`.
 /// Leading-zero digit strings (e.g. `"007"`) stay as strings because
 /// `syn::LitInt` rejects them.
+///
+/// The `span` argument is used for the fallback `LitStr` so that
+/// compiler diagnostics point to the `compile_mdx!` invocation rather
+/// than `call_site()`.
 #[must_use]
-pub fn coerce_attr_value(value: &str) -> Expr {
+pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
     match value {
         "true" => return syn::parse_quote!(true),
         "false" => return syn::parse_quote!(false),
@@ -445,7 +454,7 @@ pub fn coerce_attr_value(value: &str) -> Expr {
     // Default: string literal.
     Expr::Lit(syn::ExprLit {
         attrs: vec![],
-        lit: syn::Lit::Str(LitStr::new(value, Span::call_site())),
+        lit: syn::Lit::Str(LitStr::new(value, span)),
     })
 }
 
@@ -472,7 +481,9 @@ fn walk_jsx_attributes(
                     return None;
                 }
                 let value = match &attr.value {
-                    Some(markdown::mdast::AttributeValue::Literal(s)) => coerce_attr_value(s),
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => {
+                        coerce_attr_value(s, ctx.span)
+                    }
                     None => syn::parse_quote!(true), // bare attribute → true (D-03)
                     Some(markdown::mdast::AttributeValue::Expression(_)) => {
                         // Expression attributes like `{value}` are out of scope.
@@ -1409,7 +1420,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_bool_true() {
-        let expr = coerce_attr_value("true");
+        let expr = coerce_attr_value("true", Span::call_site());
         assert!(matches!(
             expr,
             Expr::Lit(syn::ExprLit {
@@ -1421,7 +1432,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_bool_false() {
-        let expr = coerce_attr_value("false");
+        let expr = coerce_attr_value("false", Span::call_site());
         assert!(matches!(
             expr,
             Expr::Lit(syn::ExprLit {
@@ -1433,7 +1444,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_int() {
-        let expr = coerce_attr_value("42");
+        let expr = coerce_attr_value("42", Span::call_site());
         assert!(
             matches!(
                 expr,
@@ -1448,7 +1459,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_float() {
-        let expr = coerce_attr_value("3.14");
+        let expr = coerce_attr_value("3.14", Span::call_site());
         assert!(
             matches!(
                 expr,
@@ -1463,7 +1474,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_string() {
-        let expr = coerce_attr_value("hello");
+        let expr = coerce_attr_value("hello", Span::call_site());
         if let Expr::Lit(l) = expr {
             assert!(
                 matches!(l.lit, Lit::Str(s) if s.value() == "hello"),
@@ -1476,7 +1487,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_empty_string_stays_str() {
-        let expr = coerce_attr_value("");
+        let expr = coerce_attr_value("", Span::call_site());
         assert!(
             matches!(expr, Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) if s.value().is_empty()),
             "empty string should coerce to LitStr(\"\")"
@@ -1485,7 +1496,7 @@ mod tests {
 
     #[test]
     fn coerce_attr_value_leading_zeros_stay_str() {
-        let expr = coerce_attr_value("007");
+        let expr = coerce_attr_value("007", Span::call_site());
         assert!(
             matches!(expr, Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) if s.value() == "007"),
             "leading zeros should stay as string, not coerce to int"
@@ -1540,7 +1551,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_attributes_skip_expression() {
-        let ctx = WalkContext::new(&[]);
+        let ctx = WalkContext::new(&[], Span::call_site());
         let expr_attr = markdown::mdast::AttributeContent::Expression(
             markdown::mdast::MdxJsxExpressionAttribute {
                 value: "...props".to_string(),
@@ -1560,7 +1571,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_unknown_component() {
-        let ctx = WalkContext::new(&[]);
+        let ctx = WalkContext::new(&[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1581,7 +1592,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_lowercase_is_html() {
-        let ctx = WalkContext::new(&[]);
+        let ctx = WalkContext::new(&[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1599,7 +1610,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_fragment() {
-        let ctx = WalkContext::new(&[]);
+        let ctx = WalkContext::new(&[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1614,7 +1625,7 @@ mod tests {
     fn walk_jsx_element_registered_produces_component() {
         let component_path: Path = syn::parse_quote!(components::callout);
         let registry = vec![("Callout".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry);
+        let ctx = WalkContext::new(&registry, Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1640,7 +1651,7 @@ mod tests {
     fn walk_jsx_element_self_closing_empty_children() {
         let component_path: Path = syn::parse_quote!(components::divider);
         let registry = vec![("Divider".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry);
+        let ctx = WalkContext::new(&registry, Span::call_site());
         // Self-closing and closed tags both produce empty children in markdown-rs.
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![], // empty
@@ -1669,7 +1680,7 @@ mod tests {
         // Self-closing <Widget /> is parsed as raw Html.
         let component_path: Path = syn::parse_quote!(my::widget);
         let registry = vec![("Widget".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry);
+        let ctx = WalkContext::new(&registry, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "<Widget></Widget>");
         assert_eq!(nodes.len(), 1);
         assert!(
@@ -1685,7 +1696,7 @@ mod tests {
         // this test verifies the walker function works on the struct directly.
         let component_path: Path = syn::parse_quote!(inline::badge);
         let registry = vec![("Badge".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry);
+        let ctx = WalkContext::new(&registry, Span::call_site());
         let element = markdown::mdast::MdxJsxTextElement {
             children: vec![],
             position: None,
@@ -1703,7 +1714,7 @@ mod tests {
     fn walk_jsx_text_element_unknown_component_pushes_error() {
         // CR-01: inline text-level components must report errors for unknown
         // PascalCase names, matching flow-level walk_jsx_element behavior.
-        let ctx = WalkContext::new(&[]);
+        let ctx = WalkContext::new(&[], Span::call_site());
         let element = markdown::mdast::MdxJsxTextElement {
             children: vec![],
             position: None,
@@ -1740,7 +1751,7 @@ mod tests {
         // by integration tests in the macro crate which use .mdx fixture files.
         let component_path: Path = syn::parse_quote!(components::callout);
         let registry = vec![("Callout".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry);
+        let ctx = WalkContext::new(&registry, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, r#"<Callout type="info"></Callout>"#);
         assert_eq!(nodes.len(), 1);
         let node = &nodes[0];
