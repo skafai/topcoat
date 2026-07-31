@@ -57,22 +57,26 @@ impl Default for WalkContext<'_> {
     }
 }
 
-/// Extracts YAML frontmatter from the mdast root node.
+/// Extracts YAML or TOML frontmatter from the mdast root node.
 ///
 /// Only the first child of the root can be frontmatter (Pitfall 1: YAML
 /// frontmatter must appear at byte offset 0 in the source document).
-/// Returns `Some(yaml_string)` when a `Node::Yaml` is the first root child,
-/// `None` otherwise.
+/// Returns `Some(value_string)` when a `Node::Yaml` or `Node::Toml` is the
+/// first root child, `None` otherwise.
+///
+/// Note: MdxjsEsm frontmatter is not extracted — it contains JavaScript
+/// expressions that are not deserializable as Rust types.
 #[must_use]
 pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<String> {
     let markdown::mdast::Node::Root(r) = root else {
         return None;
     };
     let first = r.children.first()?;
-    let markdown::mdast::Node::Yaml(y) = first else {
-        return None;
-    };
-    Some(y.value.clone())
+    match first {
+        markdown::mdast::Node::Yaml(y) => Some(y.value.clone()),
+        markdown::mdast::Node::Toml(t) => Some(t.value.clone()),
+        _ => None,
+    }
 }
 
 /// Walks an mdast node tree into a Topcoat `view!` `View`.
