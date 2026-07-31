@@ -733,6 +733,46 @@ mod tests {
         parse_and_walk_ctx(&WalkContext::empty(), content)
     }
 
+    fn parse_to_root(content: &str) -> markdown::mdast::Node {
+        let options = get_parse_options();
+        markdown::to_mdast(content, &options).expect("should parse valid markdown")
+    }
+
+    // ---- Frontmatter extraction tests ----
+
+    #[test]
+    fn extract_frontmatter_yaml_present() {
+        let root = parse_to_root("---\ntitle: Hello\ndate: 2024-01-01\n---\n\n# Body");
+        let yaml = extract_frontmatter(&root);
+        assert!(yaml.is_some(), "should extract YAML frontmatter");
+        let yaml = yaml.unwrap();
+        assert!(yaml.contains("title"), "should contain title field");
+        assert!(yaml.contains("Hello"), "should contain title value");
+    }
+
+    #[test]
+    fn extract_frontmatter_none() {
+        let root = parse_to_root("# Heading\n\nPlain text");
+        let yaml = extract_frontmatter(&root);
+        assert!(yaml.is_none(), "should return None when no frontmatter");
+    }
+
+    #[test]
+    fn extract_frontmatter_heading_first() {
+        let root = parse_to_root("# heading");
+        let yaml = extract_frontmatter(&root);
+        assert!(yaml.is_none(), "heading-first doc should have no frontmatter");
+    }
+
+    #[test]
+    fn extract_frontmatter_only_frontmatter() {
+        let root = parse_to_root("---\nkey: value\n---");
+        let yaml = extract_frontmatter(&root);
+        assert!(yaml.is_some(), "should extract YAML even with no body");
+        let yaml = yaml.unwrap();
+        assert!(yaml.contains("key"), "should contain the YAML content");
+    }
+
     fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
         let options = get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();
