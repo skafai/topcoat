@@ -541,7 +541,8 @@ pub fn walk_jsx_element(
 /// Walk a text-level JSX element (`MdxJsxTextElement`) into `Option<Node::Component>`.
 ///
 /// Same logic as `walk_jsx_element` but for inline JSX (e.g. `<Inline>`
-/// inside a paragraph).
+/// inside a paragraph). Pushes an error to `ctx.errors` for unregistered
+/// PascalCase components so the author gets a compile-time diagnostic.
 pub fn walk_jsx_text_element(
     ctx: &WalkContext,
     element: &markdown::mdast::MdxJsxTextElement,
@@ -552,11 +553,12 @@ pub fn walk_jsx_text_element(
         return None;
     }
 
-    let path = ctx
-        .components
-        .iter()
-        .find(|(tag, _)| tag == name)
-        .map(|(_, p)| p.clone())?;
+    let path = if let Some((_, p)) = ctx.components.iter().find(|(tag, _)| tag == name) {
+        p.clone()
+    } else {
+        ctx.errors.borrow_mut().push(format!("unknown component '{name}'"));
+        return None;
+    };
 
     let named_args = walk_jsx_attributes(ctx, &element.attributes);
     let children = walk_nodes(ctx, &element.children);
@@ -1694,6 +1696,34 @@ mod tests {
         assert!(
             matches!(&result, Some(Node::Component(_))),
             "registered text JSX should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_text_element_unknown_component_pushes_error() {
+        // CR-01: inline text-level components must report errors for unknown
+        // PascalCase names, matching flow-level walk_jsx_element behavior.
+        let ctx = WalkContext::new(&[]);
+        let element = markdown::mdast::MdxJsxTextElement {
+            children: vec![],
+            position: None,
+            name: Some("Unknown".to_string()),
+            attributes: vec![],
+        };
+        let result = walk_jsx_text_element(&ctx, &element);
+        assert!(
+            result.is_none(),
+            "unregistered inline component should return None"
+        );
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should push error for unknown inline component"
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("unknown component 'Unknown'")),
+            "should contain 'unknown component' message. Errors: {:?}",
+            *errors
         );
     }
 
