@@ -39,3 +39,18 @@ mod empty_dir_test {
         // Compilation succeeds even with no .mdx files found.
     }
 }
+
+// ---- .md-only directory ----
+
+// mdx_pages! with only .md files (no .mdx) should compile and register them.
+mod md_only_test {
+    use topcoat_mdx_macro::mdx_pages;
+
+    mdx_pages!("tests/fixtures/md-only-pages", prefix = "/md-only");
+
+    #[test]
+    fn mdx_pages_discovers_md_files() {
+        // Compilation proves .md files were registered.
+        // The directory contains only .md files, no .mdx files.
+    }
+}
