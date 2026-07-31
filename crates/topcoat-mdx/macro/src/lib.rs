@@ -114,7 +114,7 @@ impl Parse for CompileMdxInput {
 /// }
 /// ```
 ///
-/// With component registry:
+/// With component registry (recommended):
 ///
 /// ```ignore
 /// #[page("/blog/post")]
@@ -127,6 +127,15 @@ impl Parse for CompileMdxInput {
 ///         "content/post.mdx"
 ///     ) }
 /// }
+/// ```
+///
+/// The `mdx_components!` helper is the documented form, but a bare braced
+/// block is also accepted:
+///
+/// ```ignore
+/// compile_mdx!({
+///     Callout => components::callout,
+/// }, "content/post.mdx")
 /// ```
 #[proc_macro]
 pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
