@@ -409,6 +409,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 /// mdx_page!("/about", "content/about.mdx");
 /// ```
 #[proc_macro]
+#[allow(clippy::too_many_lines, clippy::missing_panics_doc)]
 pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<MdxPageInput>(tokens) {
         Ok(i) => i,
@@ -949,7 +950,7 @@ mod tests {
 
     #[test]
     fn value_to_expr_f64_precision() {
-        let expr = v2e(&serde_value::Value::F64(3.14159265)).unwrap();
+        let expr = v2e(&serde_value::Value::F64(3.141_592_65)).unwrap();
         let s = quote! { #expr }.to_string();
         // Should preserve precision, not truncate to "3.1"
         assert!(s.contains("3.14"), "should preserve precision, got {s}");
