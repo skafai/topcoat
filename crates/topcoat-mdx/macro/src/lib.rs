@@ -453,12 +453,12 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
             }
         };
 
-        match value_to_expr(&deserialized, file_path.span()) {
+        match value_to_expr(&deserialized, Some(&fm_type), file_path.span()) {
             Ok(expr) => {
-                // `expr` is a brace block `{ field: val, ... }` for Map values.
-                // Prefix with the type name to form a valid struct literal.
+                // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
+                // for Map values since `root_type` was provided.
                 quote! {
-                    const #fm_const_name: #fm_type = #fm_type #expr;
+                    const #fm_const_name: #fm_type = #expr;
                 }
             }
             Err(e) => {
@@ -788,7 +788,15 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
 
 /// Converts a `serde_value::Value` into a `syn::Expr` that constructs the
 /// equivalent Rust value at compile time.
-fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, syn::Error> {
+///
+/// If `root_type` is provided and the value is a `Map`, it is used as the
+/// struct path for the generated `ExprStruct`.  This is needed because the
+/// caller emits the expression directly (not prefixed with a type).
+fn value_to_expr(
+    value: &serde_value::Value,
+    root_type: Option<&syn::Type>,
+    span: Span,
+) -> Result<syn::Expr, syn::Error> {
     match value {
         serde_value::Value::Bool(b) => {
             Ok(syn::parse_quote! { #b })
@@ -836,21 +844,21 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
             Ok(syn::parse_quote! { None })
         }
         serde_value::Value::Option(Some(inner)) => {
-            let inner_expr = value_to_expr(inner, span)?;
+            let inner_expr = value_to_expr(inner, None, span)?;
             Ok(syn::parse_quote! { Some(#inner_expr) })
         }
         serde_value::Value::Newtype(inner) => {
-            value_to_expr(inner, span)
+            value_to_expr(inner, None, span)
         }
         serde_value::Value::Seq(items) => {
             let exprs: Result<Vec<syn::Expr>, syn::Error> =
-                items.iter().map(|v| value_to_expr(v, span)).collect();
+                items.iter().map(|v| value_to_expr(v, None, span)).collect();
             let expr_list = exprs?;
             Ok(syn::parse_quote! { vec![#(#expr_list),*] })
         }
         serde_value::Value::Map(entries) => {
             // Convert map entries to struct-like field initializers.
-            let mut fields = Vec::new();
+            let mut named_fields = Vec::new();
             for (key, val) in entries {
                 let serde_value::Value::String(field_name) = key else {
                     return Err(syn::Error::new(
@@ -859,10 +867,29 @@ fn value_to_expr(value: &serde_value::Value, span: Span) -> Result<syn::Expr, sy
                     ));
                 };
                 let field_ident = syn::Ident::new(field_name, span);
-                let field_expr = value_to_expr(val, span)?;
-                fields.push(quote! { #field_ident: #field_expr });
+                let field_expr = value_to_expr(val, None, span)?;
+                named_fields.push(syn::FieldValue {
+                    attrs: vec![],
+                    member: syn::Member::Named(field_ident),
+                    colon_token: Some(Default::default()),
+                    expr: field_expr,
+                });
             }
-            Ok(syn::parse_quote! { { #(#fields),* } })
+            // Use the provided root type as the struct path. If not given,
+            // fall back to a placeholder so the expression still parses.
+            let path = match root_type {
+                Some(syn::Type::Path(tp)) => tp.path.clone(),
+                _ => syn::Path::from(syn::Ident::new("_", span)),
+            };
+            Ok(syn::Expr::Struct(syn::ExprStruct {
+                attrs: vec![],
+                qself: None,
+                path,
+                brace_token: syn::token::Brace::default(),
+                dot2_token: None,
+                rest: None,
+                fields: named_fields.into_iter().collect(),
+            }))
         }
         serde_value::Value::Bytes(b) => {
             // Bytes in frontmatter are unusual; encode as a vec of u8 values.
@@ -884,4 +911,143 @@ fn make_lit_int(repr: &str, _span: Span) -> syn::Expr {
 fn make_lit_float(repr: &str, _span: Span) -> syn::Expr {
     let lit: syn::LitFloat = syn::parse_str(repr).expect("valid float literal");
     syn::parse_quote! { #lit }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v2e(value: &serde_value::Value) -> Result<syn::Expr, syn::Error> {
+        value_to_expr(value, None, Span::call_site())
+    }
+
+    #[test]
+    fn value_to_expr_unit() {
+        let expr = v2e(&serde_value::Value::Unit).unwrap();
+        assert!(matches!(expr, syn::Expr::Tuple(tuple) if tuple.elems.is_empty()));
+    }
+
+    #[test]
+    fn value_to_expr_bool_true() {
+        let expr = v2e(&serde_value::Value::Bool(true)).unwrap();
+        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if b.value()));
+    }
+
+    #[test]
+    fn value_to_expr_bool_false() {
+        let expr = v2e(&serde_value::Value::Bool(false)).unwrap();
+        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. }) if !b.value()));
+    }
+
+    #[test]
+    fn value_to_expr_i32() {
+        let expr = v2e(&serde_value::Value::I32(42)).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("42"), "should contain 42, got {s}");
+    }
+
+    #[test]
+    fn value_to_expr_u64() {
+        let expr = v2e(&serde_value::Value::U64(1000)).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("1000"), "should contain 1000, got {s}");
+    }
+
+    #[test]
+    fn value_to_expr_f64_precision() {
+        let expr = v2e(&serde_value::Value::F64(3.14159265)).unwrap();
+        let s = quote! { #expr }.to_string();
+        // Should preserve precision, not truncate to "3.1"
+        assert!(s.contains("3.14"), "should preserve precision, got {s}");
+    }
+
+    #[test]
+    fn value_to_expr_f32_precision() {
+        let expr = v2e(&serde_value::Value::F32(2.718)).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("2.718"), "should preserve precision, got {s}");
+    }
+
+    #[test]
+    fn value_to_expr_string() {
+        let expr = v2e(&serde_value::Value::String("hello".to_string())).unwrap();
+        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(_), .. })));
+    }
+
+    #[test]
+    fn value_to_expr_char() {
+        let expr = v2e(&serde_value::Value::Char('X')).unwrap();
+        assert!(matches!(expr, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Char(_), .. })));
+    }
+
+    #[test]
+    fn value_to_expr_option_none() {
+        let expr = v2e(&serde_value::Value::Option(None)).unwrap();
+        assert!(matches!(expr, syn::Expr::Path(p) if p.path.segments.last().unwrap().ident == "None"));
+    }
+
+    #[test]
+    fn value_to_expr_option_some() {
+        let inner = Box::new(serde_value::Value::String("inner".to_string()));
+        let expr = v2e(&serde_value::Value::Option(Some(inner))).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("Some"), "should contain Some");
+        assert!(s.contains("inner"), "should contain inner value");
+    }
+
+    #[test]
+    fn value_to_expr_seq() {
+        let items = vec![
+            serde_value::Value::I32(1),
+            serde_value::Value::I32(2),
+            serde_value::Value::I32(3),
+        ];
+        let expr = v2e(&serde_value::Value::Seq(items)).unwrap();
+        // Seq produces a macro invocation (vec![...]).
+        assert!(matches!(expr, syn::Expr::Macro(_)), "should produce a macro invocation");
+    }
+
+    #[test]
+    fn value_to_expr_empty_map() {
+        let entries: std::collections::BTreeMap<serde_value::Value, serde_value::Value> =
+            std::collections::BTreeMap::new();
+        let expr = v2e(&serde_value::Value::Map(entries)).unwrap();
+        // Empty map produces an ExprStruct with placeholder path.
+        assert!(matches!(expr, syn::Expr::Struct(_)), "should produce a struct expression");
+    }
+
+    #[test]
+    fn value_to_expr_map_with_fields() {
+        use std::collections::BTreeMap;
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            serde_value::Value::String("name".to_string()),
+            serde_value::Value::String("test".to_string()),
+        );
+        entries.insert(
+            serde_value::Value::String("count".to_string()),
+            serde_value::Value::I32(5),
+        );
+        let expr = v2e(&serde_value::Value::Map(entries)).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("name"), "should contain name field, got {s}");
+        assert!(s.contains("count"), "should contain count field, got {s}");
+    }
+
+    #[test]
+    fn value_to_expr_bytes() {
+        let bytes = vec![72, 101, 108, 108, 111];
+        let expr = v2e(&serde_value::Value::Bytes(bytes)).unwrap();
+        // Bytes produces a macro invocation (vec![...]).
+        assert!(matches!(expr, syn::Expr::Macro(_)), "should produce a macro invocation");
+    }
+
+    #[test]
+    fn value_to_expr_nested_option() {
+        let inner = Box::new(serde_value::Value::Option(Some(Box::new(serde_value::Value::I32(42)))));
+        let expr = v2e(&serde_value::Value::Option(Some(inner))).unwrap();
+        let s = quote! { #expr }.to_string();
+        assert!(s.contains("Some"), "should contain Some");
+        assert!(s.contains("42"), "should contain nested value");
+    }
 }
