@@ -560,7 +560,7 @@ pub fn walk_jsx_element(
 ///
 /// Same logic as `walk_jsx_element` but for inline JSX (e.g. `<Inline>`
 /// inside a paragraph). Pushes an error to `ctx.errors` for unregistered
-/// PascalCase components so the author gets a compile-time diagnostic.
+/// `PascalCase` components so the author gets a compile-time diagnostic.
 pub fn walk_jsx_text_element(
     ctx: &WalkContext,
     element: &markdown::mdast::MdxJsxTextElement,
