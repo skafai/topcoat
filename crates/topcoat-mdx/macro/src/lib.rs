@@ -441,8 +441,10 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
         match value_to_expr(&deserialized, file_path.span()) {
             Ok(expr) => {
+                // `expr` is a brace block `{ field: val, ... }` for Map values.
+                // Prefix with the type name to form a valid struct literal.
                 quote! {
-                    const #fm_const_name: #fm_type = #expr;
+                    const #fm_const_name: #fm_type = #fm_type #expr;
                 }
             }
             Err(e) => {
