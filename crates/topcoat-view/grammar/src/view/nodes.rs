@@ -13,6 +13,7 @@ pub struct Nodes(Vec<Node>);
 
 impl Nodes {
     /// Constructs an empty `Nodes`.
+    #[must_use]
     pub fn new() -> Self {
         Self(Vec::new())
     }

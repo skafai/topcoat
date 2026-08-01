@@ -18,7 +18,14 @@ pub struct ViewWriter {
     nested: bool,
 }
 
+impl Default for ViewWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ViewWriter {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             chunks: Vec::new(),
@@ -27,6 +34,7 @@ impl ViewWriter {
         }
     }
 
+    #[must_use]
     pub fn new_nested() -> Self {
         Self {
             chunks: Vec::new(),
@@ -119,6 +127,7 @@ impl ViewWriter {
         });
     }
 
+    #[must_use]
     pub fn into_token_stream(mut self) -> TokenStream {
         self.flush();
 
