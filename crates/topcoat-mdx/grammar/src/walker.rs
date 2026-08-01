@@ -257,7 +257,7 @@ pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, writer: &
 }
 
 // Re-export jsx functions that are part of the public API used by external consumers.
-pub use jsx::{coerce_attr_value, try_apply_override};
+pub use jsx::coerce_attr_value;
 
 #[cfg(test)]
 mod tests {
