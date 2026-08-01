@@ -28,7 +28,7 @@ The `compile_mdx!` macro resolves file paths relative to `CARGO_MANIFEST_DIR`. T
 
 # MDX Syntax
 
-The parser supports CommonMark and GFM extensions including tables, strikethrough, task lists, and autolinks. HTML passthrough is disabled so that only component tags are processed through the MDX JSX path.
+The parser supports `CommonMark` and GFM extensions including tables, strikethrough, task lists, and autolinks. HTML passthrough is disabled so that only component tags are processed through the MDX JSX path.
 
 See the [`compile_mdx!`][compile_mdx] reference for the full list of supported features: reference links, footnotes, heading IDs, code block meta strings, and excerpt extraction.
 

@@ -33,6 +33,7 @@ use crate::{
 };
 
 /// The full list of attributes attached to a single tag.
+#[derive(Default)]
 pub struct Attributes {
     /// The request context binding supplied by a leading `cx =>` argument to
     /// the `attributes!` macro.
@@ -50,15 +51,6 @@ impl Attributes {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
-    }
-}
-
-impl Default for Attributes {
-    fn default() -> Self {
-        Self {
-            cx: None,
-            items: Vec::new(),
-        }
     }
 }
 
