@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-topcoat = { workspace = true, features = ["mdx", "serve", "view", "router"] }
+topcoat = { workspace = true, features = ["mdx", "serve", "view", "router", "discover"] }
 serde = { workspace = true, features = ["derive"] }
 
 [lints]
