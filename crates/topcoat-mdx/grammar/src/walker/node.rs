@@ -260,11 +260,6 @@ mod tests {
         parse_and_walk_ctx(&WalkContext::empty(), content)
     }
 
-    fn parse_to_root(content: &str) -> markdown::mdast::Node {
-        let options = get_parse_options();
-        markdown::to_mdast(content, &options).expect("should parse valid markdown")
-    }
-
     fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
         let options = get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();
