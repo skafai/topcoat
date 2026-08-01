@@ -403,6 +403,75 @@ pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, builder: 
     }
 }
 
+/// Walks an mdast node into a `ViewWriter`, stripping `<!-- more -->` from
+/// text content.
+///
+/// Used when writing excerpt content so that the excerpt marker does not
+/// appear as visible text in the rendered output. This is necessary because
+/// `html_flow` and `html_text` are disabled in parse options, so `<!-- more -->`
+/// is parsed as literal text inside a Paragraph (or as root-level text), not as
+/// an HTML comment node.
+pub fn walk_excerpt_to_writer(
+    ctx: &WalkContext,
+    node: &markdown::mdast::Node,
+    writer: &mut ViewWriter,
+) {
+    match node {
+        // Root-level Text: strip marker substring.
+        markdown::mdast::Node::Text(t) => {
+            let stripped: String = t.value.replace("<!-- more -->", "");
+            if !stripped.is_empty() {
+                writer.write_text(&stripped);
+            }
+        }
+        // Paragraph: strip marker from its Text children before walking.
+        markdown::mdast::Node::Paragraph(p) => {
+            let children: Vec<markdown::mdast::Node> = p
+                .children
+                .iter()
+                .map(|child| {
+                    if let markdown::mdast::Node::Text(t) = child {
+                        let stripped: String = t.value.replace("<!-- more -->", "");
+                        if stripped.is_empty() {
+                            // Emit a zero-length Text node so the slot is not dropped.
+                            markdown::mdast::Node::Text(markdown::mdast::Text {
+                                position: t.position,
+                                value: String::new(),
+                            })
+                        } else {
+                            markdown::mdast::Node::Text(markdown::mdast::Text {
+                                position: t.position,
+                                value: stripped,
+                            })
+                        }
+                    } else {
+                        child.clone()
+                    }
+                })
+                .collect();
+            let stripped_p = markdown::mdast::Paragraph {
+                position: p.position,
+                children,
+            };
+            let para_attrs = helpers::with_attributes(Vec::new());
+            let para_children = Nodes::from(vec![helpers::html_element(
+                "p",
+                walk_nodes(ctx, &stripped_p.children),
+            )]);
+            for vn in para_children.into_vec() {
+                vn.write(writer);
+            }
+        }
+        // All other nodes: walk normally (marker is not present).
+        _ => {
+            let view_nodes = walk_node(ctx, node);
+            for vn in view_nodes {
+                vn.write(writer);
+            }
+        }
+    }
+}
+
 // Re-export jsx functions that are part of the public API used by external consumers.
 pub use jsx::coerce_attr_value;
 // Re-export excerpt split detection for the macro crate's two-writer approach.
