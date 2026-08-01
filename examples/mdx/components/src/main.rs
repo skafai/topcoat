@@ -2,7 +2,6 @@ mod components;
 
 use topcoat::{
     Result,
-    context::Cx,
     mdx::compile_mdx,
     router::{page, Router},
 };
@@ -28,7 +27,7 @@ fn router() -> Router {
 // --- Pages ------------------------------------------------------------------
 
 #[page("/callouts")]
-async fn callouts(_cx: &Cx) -> Result {
+async fn callouts() -> Result {
     compile_mdx!(
         mdx_components! {
             Callout => components::callout,
@@ -40,7 +39,7 @@ async fn callouts(_cx: &Cx) -> Result {
 }
 
 #[page("/wrappers")]
-async fn wrappers(_cx: &Cx) -> Result {
+async fn wrappers() -> Result {
     compile_mdx!(
         mdx_components! {
             Callout => components::callout,
@@ -52,7 +51,7 @@ async fn wrappers(_cx: &Cx) -> Result {
 }
 
 #[page("/self-closing")]
-async fn self_closing(_cx: &Cx) -> Result {
+async fn self_closing() -> Result {
     compile_mdx!(
         mdx_components! {
             Callout => components::callout,
@@ -64,7 +63,7 @@ async fn self_closing(_cx: &Cx) -> Result {
 }
 
 #[page("/nested")]
-async fn nested(_cx: &Cx) -> Result {
+async fn nested() -> Result {
     compile_mdx!(
         mdx_components! {
             Callout => components::callout,

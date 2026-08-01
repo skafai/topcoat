@@ -2,7 +2,6 @@ mod components;
 
 use topcoat::{
     Result,
-    context::Cx,
     mdx::compile_mdx,
     router::{layout, page, Router, RouterBuilderDiscoverExt},
     view::view,
@@ -24,9 +23,8 @@ fn router() -> Router {
 // --- Layout -----------------------------------------------------------------
 
 #[layout("/")]
-async fn root_layout(cx: &Cx, slot: Result) -> Result {
+async fn root_layout(slot: Result) -> Result {
     view! {
-        cx =>
         <html>
             <head>
                 <title>"MDX Docs"</title>
@@ -52,9 +50,8 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
 // --- Pages ------------------------------------------------------------------
 
 #[page("/")]
-async fn home(_cx: &Cx) -> Result {
+async fn home() -> Result {
     view! {
-        _cx =>
         <h1>"MDX Features"</h1>
         <p>"This example demonstrates advanced MDX features in Topcoat."</p>
         <ul>
@@ -70,17 +67,17 @@ async fn home(_cx: &Cx) -> Result {
 }
 
 #[page("/footnotes")]
-async fn footnotes(_cx: &Cx) -> Result {
+async fn footnotes() -> Result {
     compile_mdx!("pages/footnotes.mdx")
 }
 
 #[page("/references")]
-async fn references(_cx: &Cx) -> Result {
+async fn references() -> Result {
     compile_mdx!("pages/references.mdx")
 }
 
 #[page("/overrides")]
-async fn overrides(_cx: &Cx) -> Result {
+async fn overrides() -> Result {
     compile_mdx!(
         mdx_components!{},
         overrides = { "a" => components::branded_link },
@@ -89,7 +86,7 @@ async fn overrides(_cx: &Cx) -> Result {
 }
 
 #[page("/wrappers")]
-async fn wrappers(_cx: &Cx) -> Result {
+async fn wrappers() -> Result {
     compile_mdx!(
         mdx_components!{},
         wrapper = components::page_wrapper,
@@ -98,16 +95,16 @@ async fn wrappers(_cx: &Cx) -> Result {
 }
 
 #[page("/excerpts")]
-async fn excerpts(_cx: &Cx) -> Result {
+async fn excerpts() -> Result {
     compile_mdx!("pages/excerpts.mdx")
 }
 
 #[page("/code-blocks")]
-async fn code_blocks(_cx: &Cx) -> Result {
+async fn code_blocks() -> Result {
     compile_mdx!("pages/code-blocks.mdx")
 }
 
 #[page("/heading-ids")]
-async fn heading_ids(_cx: &Cx) -> Result {
+async fn heading_ids() -> Result {
     compile_mdx!("pages/heading-ids.mdx")
 }
