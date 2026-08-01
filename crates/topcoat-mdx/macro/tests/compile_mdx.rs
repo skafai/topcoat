@@ -193,3 +193,47 @@ async fn raw_html_dropped_when_disabled() {
         "markdown paragraphs should still render. Got:\n{html}"
     );
 }
+
+// ---- Reference links and footnotes ----
+
+#[tokio::test]
+async fn compile_mdx_resolves_reference_links() {
+    // Definitions are collected before the walk, so a reference-style link
+    // resolves to the declared URL and title.
+    let view = compile_mdx!("tests/fixtures/references_footnotes.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+
+    assert!(
+        html.contains(r#"href="https://docs.rs/topcoat""#),
+        "reference link should resolve to the definition URL. Got:\n{html}"
+    );
+    assert!(
+        html.contains(r#"title="Topcoat on docs.rs""#),
+        "reference link should carry the definition title. Got:\n{html}"
+    );
+}
+
+#[tokio::test]
+async fn compile_mdx_renders_footnote_section() {
+    // Footnote definitions render as a section at the end of the document,
+    // with anchors that resolve in both directions.
+    let view = compile_mdx!("tests/fixtures/references_footnotes.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+
+    assert!(
+        html.contains("The footnote body."),
+        "footnote section should render at the document end. Got:\n{html}"
+    );
+    assert!(
+        html.contains(r#"id="fnref-note""#) && html.contains(r##"href="#fn-note""##),
+        "reference should link to the footnote. Got:\n{html}"
+    );
+    assert!(
+        html.contains(r#"id="fn-note""#) && html.contains(r##"href="#fnref-note""##),
+        "footnote should link back to the reference. Got:\n{html}"
+    );
+}

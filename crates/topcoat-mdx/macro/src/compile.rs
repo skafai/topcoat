@@ -5,11 +5,11 @@ use syn::Path as SynPath;
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
     walker::{
-        FrontmatterFormat, extract_frontmatter, find_excerpt_split, walk_excerpt_to_writer,
+        FrontmatterFormat, collect_definitions, extract_frontmatter, node::walk_footnote_section,
         walk_to_writer,
     },
 };
-use topcoat_view_grammar::view::hir::ViewBuilder;
+use topcoat_view_grammar::view::hir::{LowerView, ViewBuilder};
 
 // ---------------------------------------------------------------------------
 // Common compile logic shared by compile_mdx! and mdx_page!
@@ -31,16 +31,6 @@ pub(crate) struct CompiledMdxResult {
     pub(crate) has_wrapper: bool,
     /// The wrapper component path (set when `has_wrapper` is true).
     pub(crate) wrapper_path: Option<SynPath>,
-    /// Excerpt tokens from the walker when `<!-- more -->` is present.
-    /// Contains the view tokens for the content before the excerpt marker,
-    /// produced by a separate `ViewBuilder`.
-    ///
-    /// TODO: Currently computed but not emitted to generated code. The
-    /// caller (`compile_mdx!`, `mdx_page!`) only uses `view_tokens`.
-    /// Excerpt tokens should be exposed as a separate const or component
-    /// prop so consuming code can render the excerpt independently.
-    #[allow(dead_code)]
-    pub(crate) excerpt_tokens: Option<proc_macro2::TokenStream>,
 }
 
 /// Shared inner logic: parse markdown content, extract frontmatter, walk mdast.
@@ -73,43 +63,45 @@ pub(crate) fn parse_and_walk_mdx(
         .iter()
         .map(|(tag, path)| (*tag, path.clone()))
         .collect();
-    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, &owned_overrides, span);
 
-    // Determine excerpt split index from the root children (post-frontmatter).
-    let (excerpt_split, post_fm_children) = if let markdown::mdast::Node::Root(ref r) = root {
-        let start_idx = usize::from(frontmatter_content.is_some());
-        let post_fm: &[markdown::mdast::Node] = &r.children[start_idx..];
-        let split = find_excerpt_split(post_fm);
-        (split, post_fm)
-    } else {
-        (None, &[] as &[markdown::mdast::Node])
+    // First pass: collect link/image definitions and footnote definitions, so
+    // that reference nodes encountered during the walk can resolve against them.
+    let (definitions, footnotes) = match root {
+        markdown::mdast::Node::Root(ref r) => collect_definitions(r),
+        _ => Default::default(),
     };
+    let ctx = topcoat_mdx_grammar::walker::WalkContext::with_maps(
+        components,
+        &owned_overrides,
+        span,
+        definitions,
+        footnotes,
+    );
 
-    // Walk mdast into ViewBuilder(s), skipping the frontmatter node.
+    // Root children, skipping the frontmatter node when present.
+    let post_fm_children: &[markdown::mdast::Node] =
+        if let markdown::mdast::Node::Root(ref r) = root {
+            let start_idx = usize::from(frontmatter_content.is_some());
+            &r.children[start_idx..]
+        } else {
+            &[]
+        };
+
+    // Walk mdast into a ViewBuilder, skipping the frontmatter node.
     // Emit via `Scope::emit_view()` when a wrapper is specified so the
     // tokens are suitable for a component `child:` prop (no async wrapper).
     let mut builder = ViewBuilder::new();
 
-    // Two-builder approach: if an excerpt split point exists, walk excerpt
-    // children into a separate builder and body children into the main
-    // builder. Excerpt children are walked through `walk_excerpt_to_writer`
-    // which strips `<!-- more -->` from text content so the marker does not
-    // appear as visible text in rendered output.
-    let excerpt_tokens = if let Some(split_idx) = excerpt_split {
-        let mut excerpt_builder = ViewBuilder::new();
-        for child in &post_fm_children[..split_idx] {
-            walk_excerpt_to_writer(&ctx, child, &mut excerpt_builder);
-        }
-        for child in &post_fm_children[split_idx..] {
-            walk_to_writer(&ctx, child, &mut builder);
-        }
-        Some(excerpt_builder.finish().emit_view())
-    } else {
-        for child in post_fm_children {
-            walk_to_writer(&ctx, child, &mut builder);
-        }
-        None
-    };
+    for child in post_fm_children {
+        walk_to_writer(&ctx, child, &mut builder);
+    }
+
+    // Second pass: footnote definitions render as a numbered section at the end
+    // of the document, in first-reference order.
+    let footnote_order = ctx.footnote_order.borrow().clone();
+    if !footnote_order.is_empty() {
+        walk_footnote_section(&ctx, &footnote_order).lower(&mut builder);
+    }
 
     // Drain walker error buffer into syn::Error diagnostics.
     let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
@@ -133,7 +125,6 @@ pub(crate) fn parse_and_walk_mdx(
         view_tokens: inner_tokens,
         has_wrapper: wrapper.is_some(),
         wrapper_path: wrapper.cloned(),
-        excerpt_tokens,
     })
 }
 

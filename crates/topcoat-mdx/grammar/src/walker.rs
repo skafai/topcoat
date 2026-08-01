@@ -353,20 +353,19 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         }
         markdown::mdast::Node::Link(l) => vec![node::walk_link(ctx, l)],
         markdown::mdast::Node::Image(i) => vec![node::walk_image(ctx, i)],
-        // Html nodes are never produced by the parser (html_flow and
-        // html_text are disabled in get_parse_options()). MdxjsEsm
-        // contains JS expressions that are not Rust-deserializable.
-        // Definition nodes are declarations only, skip during main walk.
-        // Footnote definitions: skip during main walk, rendered at doc end.
-        // Definition nodes: declarations only, skip during main walk.
-        // Deferred:
-        // - MdxFlowExpression, MdxTextExpression: MDX expressions
-        // Handled elsewhere (not rendered by this walker):
-        // - Html: disabled (never produced by parser), handled by match arm above
-        // - Yaml, Toml: extracted by extract_frontmatter(), skipped in walker
-        // - MdxjsEsm: not rendered (JS expressions, not Rust-deserializable)
-        // - InlineMath, Math: LaTeX math (not enabled in parse options)
+        // Nodes that produce no output:
+        // - Html: never produced, html_flow and html_text are off in get_parse_options()
+        // - MdxjsEsm: JavaScript expressions, not Rust-deserializable
+        // - Definition: a declaration, resolved through ctx.definitions instead
+        // - FootnoteDefinition: rendered at document end, not inline
+        //
+        // Handled elsewhere:
+        // - Yaml, Toml: extracted by extract_frontmatter() before the walk
         // - TableRow, TableCell: handled internally by walk_table
+        //
+        // Not yet supported:
+        // - MdxFlowExpression, MdxTextExpression: MDX expressions
+        // - InlineMath, Math: LaTeX math, not enabled in parse options
         markdown::mdast::Node::Html(_)
         | markdown::mdast::Node::MdxjsEsm(_)
         | markdown::mdast::Node::Definition(_)
@@ -426,58 +425,7 @@ pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, builder: 
     }
 }
 
-/// Walks an mdast node into a `ViewBuilder`, stripping `<!-- more -->` from
-/// text content.
-///
-/// Used when writing excerpt content so that the excerpt marker does not
-/// appear as visible text in the rendered output. This is necessary because
-/// `html_flow` and `html_text` are disabled in parse options, so `<!-- more -->`
-/// is parsed as literal text inside a Paragraph (or as root-level text), not as
-/// an HTML comment node.
-pub fn walk_excerpt_to_writer(
-    ctx: &WalkContext,
-    node: &markdown::mdast::Node,
-    builder: &mut ViewBuilder,
-) {
-    match node {
-        // Root-level Text: strip marker substring and write directly.
-        markdown::mdast::Node::Text(t) => {
-            let stripped: String = t.value.replace("<!-- more -->", "");
-            if !stripped.is_empty() {
-                builder.text(&stripped);
-            }
-        }
-        // Paragraph: strip marker from Text children, build <p> manually
-        // (walk_node would double-wrap since it already adds <p>).
-        markdown::mdast::Node::Paragraph(p) => {
-            let mut child_nodes = Vec::new();
-            for child in &p.children {
-                match child {
-                    markdown::mdast::Node::Text(t) => {
-                        let stripped: String = t.value.replace("<!-- more -->", "");
-                        if !stripped.is_empty() {
-                            child_nodes.push(helpers::text_node(&stripped));
-                        }
-                    }
-                    _ => child_nodes.extend(walk_node(ctx, child)),
-                }
-            }
-            let para = helpers::html_element("p", Nodes::from(child_nodes));
-            para.lower(builder);
-        }
-        // All other nodes: walk normally (marker is not present).
-        _ => {
-            let view_nodes = walk_node(ctx, node);
-            for vn in view_nodes {
-                vn.lower(builder);
-            }
-        }
-    }
-}
-
 // Re-export jsx functions that are part of the public API used by external consumers.
-// Re-export excerpt split detection for the macro crate's two-writer approach.
-pub use helpers::find_excerpt_split;
 pub use jsx::coerce_attr_value;
 
 #[cfg(test)]

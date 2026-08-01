@@ -370,8 +370,9 @@ pub(crate) fn walk_image_reference(
 /// Walks a footnote reference node: `[^id]` rendered as superscript link.
 ///
 /// Tracks the identifier in `ctx.footnote_order` if not already present
-/// (GFM first-reference order). Emits `<sup><a href="#fn-{id}">{id}</a></sup>`
-/// as inline content.
+/// (GFM first-reference order). Emits
+/// `<sup><a id="fnref-{id}" href="#fn-{id}">{id}</a></sup>` as inline content.
+/// The `id` is the target that the footnote section's back-reference links to.
 pub(crate) fn walk_footnote_reference(
     ctx: &WalkContext,
     foot_ref: &markdown::mdast::FootnoteReference,
@@ -383,8 +384,12 @@ pub(crate) fn walk_footnote_reference(
             order.push(foot_ref.identifier.clone());
         }
     }
+    let anchor_id = format!("fnref-{}", foot_ref.identifier);
     let href = format!("#fn-{}", foot_ref.identifier);
-    let attrs = with_attributes(vec![create_attribute("href", &href)]);
+    let attrs = with_attributes(vec![
+        create_attribute("id", &anchor_id),
+        create_attribute("href", &href),
+    ]);
     let link_text = text_node(&foot_ref.identifier);
     let a = Node::Element(Box::new(normal_element_with_attrs(
         "a",
@@ -399,7 +404,7 @@ pub(crate) fn walk_footnote_reference(
 /// Called after the main walk by `mdx_to_view` when footnotes were referenced.
 /// Each `<li>` contains the footnote definition content with a back-reference link.
 /// Numbering follows first-reference order per GFM spec.
-pub(crate) fn walk_footnote_section(ctx: &WalkContext, footnote_order: &[String]) -> Node {
+pub fn walk_footnote_section(ctx: &WalkContext, footnote_order: &[String]) -> Node {
     let mut li_nodes = Vec::new();
     for id in footnote_order {
         // Find the footnote definition content.
@@ -458,6 +463,24 @@ mod tests {
             markdown::mdast::Node::Root(r) => super::super::walk_nodes(ctx, &r.children),
             _ => unreachable!(),
         }
+    }
+
+    /// Collects every top-level element with the given tag name.
+    fn find_elements<'a>(nodes: &'a [Node], tag: &str) -> Vec<&'a ViewElement> {
+        nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Element(e) if e.name().string_name().as_deref() == Some(tag) => {
+                    Some(e.as_ref())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Returns the first top-level element with the given tag name.
+    fn find_element<'a>(nodes: &'a [Node], tag: &str) -> Option<&'a ViewElement> {
+        find_elements(nodes, tag).into_iter().next()
     }
 
     // ---- Existing tests ----
@@ -1112,16 +1135,7 @@ mod tests {
             super::super::mdx_to_view(&ctx, "```rust {1,3} title=\"file.rs\"\nfn main() {}\n```")
                 .expect("should parse");
         assert!(!view.nodes.is_empty());
-        let pre = view.nodes.iter().find_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("pre") {
-                    return Some(e.as_ref());
-                }
-            }
-            None
-        });
-        assert!(pre.is_some(), "should have pre element");
-        let pre = pre.unwrap();
+        let pre = find_element(&view.nodes, "pre").expect("should have pre element");
         let data_lang = find_attr_value(pre, "data-lang");
         let data_lines = find_attr_value(pre, "data-lines");
         let data_title = find_attr_value(pre, "data-title");
@@ -1148,16 +1162,7 @@ mod tests {
         let ctx = WalkContext::empty();
         let view =
             super::super::mdx_to_view(&ctx, "```python\nprint()\n```").expect("should parse");
-        let pre = view.nodes.iter().find_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("pre") {
-                    return Some(e.as_ref());
-                }
-            }
-            None
-        });
-        assert!(pre.is_some(), "should have pre element");
-        let pre = pre.unwrap();
+        let pre = find_element(&view.nodes, "pre").expect("should have pre element");
         let data_lang = find_attr_value(pre, "data-lang");
         assert_eq!(data_lang, Some("python".to_string()));
     }
@@ -1167,16 +1172,7 @@ mod tests {
         // ``` (no language) should emit no data-* attributes
         let ctx = WalkContext::empty();
         let view = super::super::mdx_to_view(&ctx, "```\nno lang\n```").expect("should parse");
-        let pre = view.nodes.iter().find_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("pre") {
-                    return Some(e.as_ref());
-                }
-            }
-            None
-        });
-        assert!(pre.is_some(), "should have pre element");
-        let pre = pre.unwrap();
+        let pre = find_element(&view.nodes, "pre").expect("should have pre element");
         let data_lang = find_attr_value(pre, "data-lang");
         assert!(
             data_lang.is_none(),
@@ -1190,16 +1186,7 @@ mod tests {
         let ctx = WalkContext::empty();
         let view =
             super::super::mdx_to_view(&ctx, "```bash /sudo/\necho hi\n```").expect("should parse");
-        let pre = view.nodes.iter().find_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("pre") {
-                    return Some(e.as_ref());
-                }
-            }
-            None
-        });
-        assert!(pre.is_some(), "should have pre element");
-        let pre = pre.unwrap();
+        let pre = find_element(&view.nodes, "pre").expect("should have pre element");
         let data_emphasis = find_attr_value(pre, "data-emphasis");
         assert_eq!(
             data_emphasis,
@@ -1228,21 +1215,19 @@ mod tests {
                             }
                         })
                         .collect();
-                    let full = if rest_parts.is_empty() {
+                    if rest_parts.is_empty() {
                         id.first.to_string()
                     } else {
                         format!("{}-{}", id.first, rest_parts.join("-"))
-                    };
-                    full
+                    }
                 } else {
                     continue;
                 };
-                if key_name == name {
-                    if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) =
+                if key_name == name
+                    && let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) =
                         &attr.value
-                    {
-                        return Some(lit.value());
-                    }
+                {
+                    return Some(lit.value());
                 }
             }
         }
@@ -1255,17 +1240,7 @@ mod tests {
         let ctx = WalkContext::empty();
         let view = super::super::mdx_to_view(&ctx, "# Hello").expect("should parse");
         assert!(!view.nodes.is_empty());
-        // Find the h1 element
-        let h1 = view.nodes.iter().find_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("h1") {
-                    return Some(e.as_ref());
-                }
-            }
-            None
-        });
-        assert!(h1.is_some(), "should have h1 element");
-        let h1 = h1.unwrap();
+        let h1 = find_element(&view.nodes, "h1").expect("should have h1 element");
         let id_value = find_attr_value(h1, "id");
         assert_eq!(
             id_value,
@@ -1279,18 +1254,7 @@ mod tests {
         // Two "# Hello" headings should produce id="hello" and id="hello-1"
         let ctx = WalkContext::empty();
         let view = super::super::mdx_to_view(&ctx, "# Hello\n\n# Hello").expect("should parse");
-        let h1s: Vec<_> = view
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let Node::Element(e) = n {
-                    if e.name().string_name().as_deref() == Some("h1") {
-                        return Some(e.as_ref());
-                    }
-                }
-                None
-            })
-            .collect();
+        let h1s = find_elements(&view.nodes, "h1");
         assert_eq!(h1s.len(), 2, "should have two h1 elements");
         let id1 = find_attr_value(h1s[0], "id");
         let id2 = find_attr_value(h1s[1], "id");
@@ -1490,6 +1454,43 @@ mod tests {
             }
         });
         assert!(has_sup, "footnote reference should render as <sup>");
+    }
+
+    #[test]
+    fn footnote_back_reference_target_exists() {
+        // The <li> back-reference links to #fnref-1, so the referencing <a>
+        // must carry id="fnref-1" for the anchor to resolve.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(&ctx, "See note[^1].\n\n[^1]: This is a footnote.")
+            .expect("should parse");
+
+        let paragraph = find_element(&view.nodes, "p").expect("should have paragraph");
+        let sup = find_element(paragraph.children(), "sup").expect("should have sup");
+        let anchor = find_element(sup.children(), "a").expect("should have anchor");
+        assert_eq!(
+            find_attr_value(anchor, "id"),
+            Some("fnref-1".to_string()),
+            "reference anchor should carry the back-reference target id"
+        );
+        assert_eq!(
+            find_attr_value(anchor, "href"),
+            Some("#fn-1".to_string()),
+            "reference anchor should link to the footnote definition"
+        );
+
+        let ol = find_element(&view.nodes, "ol").expect("should have footnote section");
+        let li = find_element(ol.children(), "li").expect("should have footnote item");
+        assert_eq!(
+            find_attr_value(li, "id"),
+            Some("fn-1".to_string()),
+            "footnote item should carry the reference target id"
+        );
+        let back_ref = find_element(li.children(), "a").expect("should have back-reference");
+        assert_eq!(
+            find_attr_value(back_ref, "href"),
+            Some("#fnref-1".to_string()),
+            "back-reference should link to the reference anchor"
+        );
     }
 
     #[test]
