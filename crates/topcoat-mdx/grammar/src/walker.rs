@@ -109,10 +109,6 @@ pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<(String, Fron
 /// enabled, then walks the resulting mdast into a `View` value ready for
 /// token emission via `ToTokens`.
 ///
-/// Note: raw HTML blocks are not supported through this entry point
-/// (they require `walk_to_writer` which has access to `ViewBuilder`'s
-/// unescaped output). Use `compile_mdx!` for HTML passthrough support.
-///
 /// # Errors
 ///
 /// Returns `Err(markdown::message::Message)` if the markdown parser fails.
@@ -182,13 +178,12 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         }
         markdown::mdast::Node::Link(l) => vec![node::walk_link(ctx, l)],
         markdown::mdast::Node::Image(i) => vec![node::walk_image(ctx, i)],
-        // Raw HTML cannot be represented in the view! AST without a
-        // ViewBuilder (which supports str_unescaped). Use
-        // walk_to_writer for HTML passthrough. It returns Vec::new() like
-        // the wildcard arm, which is intentional: Html nodes are skipped
-        // here and handled by walk_to_writer instead.
-        #[allow(clippy::match_same_arms)]
-        markdown::mdast::Node::Html(_) | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
+        // Html nodes are never produced by the parser (html_flow and
+        // html_text are disabled in get_parse_options()). MdxjsEsm
+        // contains JS expressions that are not Rust-deserializable.
+        // Both return Vec::new() / fall to the wildcard arm.
+        markdown::mdast::Node::Html(_)
+        | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
         markdown::mdast::Node::Code(c) => vec![node::walk_code_block(ctx, c)],
         markdown::mdast::Node::List(l) => vec![node::walk_list(ctx, l)],
         markdown::mdast::Node::ListItem(li) => vec![node::walk_list_item(ctx, li)],
@@ -216,7 +211,7 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         // - FootnoteDefinition, FootnoteReference: footnote support
         // - MdxFlowExpression, MdxTextExpression: MDX expressions
         // Handled elsewhere (not rendered by this walker):
-        // - Html: raw passthrough via walk_to_writer (line above)
+        // - Html: disabled (never produced by parser), handled by match arm above
         // - Yaml, Toml: extracted by extract_frontmatter(), skipped in walker
         // - MdxjsEsm: not rendered (JS expressions, not Rust-deserializable)
         // - InlineMath, Math: LaTeX math (not enabled in parse options)
@@ -227,22 +222,13 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
 
 /// Walks an mdast node directly into a `ViewBuilder`.
 ///
-/// This is the key function for raw HTML passthrough (D-03): `mdast::Html`
-/// nodes are written via `str_unescaped()`, while `mdast::Text` nodes
-/// go through `text()` for proper escaping.
+/// `mdast::Text` nodes go through `text()` for proper escaping.
+/// All other node types are walked into view `Node`s and written through
+/// their own `LowerView` implementation. HTML passthrough is disabled:
+/// `html_flow` and `html_text` are off in `get_parse_options()`, so
+/// `mdast::Html` nodes are never produced by the parser.
 pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, builder: &mut ViewBuilder) {
     match node {
-        markdown::mdast::Node::Html(h) => {
-            // Raw HTML passthrough.
-            //
-            // Security model: MDX files are trusted source content compiled
-            // at build time. There is no runtime sanitization — any HTML
-            // (including <script>, <iframe>, <object>) is emitted verbatim.
-            // Do not use this pipeline with untrusted or user-generated MDX.
-            // Links and images have separate is_safe_url() checks on their
-            // URL attributes; raw HTML nodes do not.
-            builder.str_unescaped(&h.value);
-        }
         markdown::mdast::Node::Text(t) => {
             // Text content — escaped for HtmlContext::Text.
             builder.text(&t.value);
@@ -262,8 +248,6 @@ pub use jsx::coerce_attr_value;
 
 #[cfg(test)]
 mod tests {
-    use quote::quote;
-
     use super::*;
     use crate::parse::get_parse_options;
 
@@ -333,36 +317,6 @@ mod tests {
         assert!(
             fm.is_none(),
             "MdxjsEsm should not be extracted as frontmatter"
-        );
-    }
-
-    // ---- walk_to_writer test ----
-
-    #[test]
-    fn walks_raw_html_via_writer() {
-        let ctx = WalkContext::empty();
-        let options = get_parse_options();
-        let root = markdown::to_mdast(r#"<div class="raw">Raw</div>"#, &options).unwrap();
-        let mut builder = ViewBuilder::new();
-        if let markdown::mdast::Node::Root(r) = root {
-            for child in &r.children {
-                walk_to_writer(&ctx, child, &mut builder);
-            }
-        }
-        let tokens = builder.finish().emit_root();
-        let token_str = quote! { #tokens }.to_string();
-        // The raw HTML should appear verbatim (not escaped as &lt;div&gt;).
-        assert!(
-            token_str.contains("<div"),
-            "should contain raw <div, got: {token_str}"
-        );
-        assert!(
-            !token_str.contains("&lt;div"),
-            "should NOT contain escaped &lt;div, got: {token_str}",
-        );
-        assert!(
-            token_str.contains("Raw</div>"),
-            "should contain raw closing tag, got: {token_str}",
         );
     }
 
