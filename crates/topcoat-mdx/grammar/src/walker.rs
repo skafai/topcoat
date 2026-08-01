@@ -122,6 +122,12 @@ impl Default for WalkContext<'_> {
 /// case-folding rules. Returns a tuple of `(definitions, footnotes)` where
 /// definitions maps the normalized identifier to `(url, title)` and footnotes
 /// stores `(identifier, children)` pairs.
+///
+/// Per CommonMark spec, definitions must appear at the document level.
+/// This function only scans direct root children. If the parser places a
+/// definition inside a nested structure (e.g., after a blockquote), it
+/// will be silently missed, causing reference links to fail with
+/// "unknown reference" errors.
 #[must_use]
 pub fn collect_definitions(
     root: &markdown::mdast::Root,
