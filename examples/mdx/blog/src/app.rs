@@ -3,7 +3,7 @@ mod blog;
 
 use topcoat::{
     Result,
-    router::{layout, module_router, page, RouterBuilderDiscoverExt},
+    router::{RouterBuilderDiscoverExt, layout, module_router, page},
     view::view,
 };
 
@@ -13,8 +13,7 @@ pub fn router() -> topcoat::router::Router {
     // module_router! discovers #[page]/#[layout]/#[route] from the module tree.
     // Converting to RouterBuilder and running discover() picks up PageFn items
     // submitted by mdx_pages! and other inventory-based registrations.
-    let builder: topcoat::router::RouterBuilder = module_router!().into();
-    builder.discover().build()
+    module_router!().discover().build()
 }
 
 // --- Layout ------------------------------------------------------------------
