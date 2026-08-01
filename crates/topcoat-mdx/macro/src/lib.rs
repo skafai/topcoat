@@ -165,7 +165,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
     let view_tokens = &result.view_tokens;
 
-    // Apply wrapper if requested — emits Component::render() call using `cx`.
+    // Apply wrapper if requested, emitting a Component::render() call using `cx`.
     let render_body = if result.has_wrapper {
         let wrapper_path = result.wrapper_path.as_ref().unwrap();
         quote! {

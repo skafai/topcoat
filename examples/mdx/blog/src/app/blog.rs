@@ -1,6 +1,6 @@
 use topcoat::{Result, mdx::mdx_pages, router::page, view::view};
 
-// `mdx_pages!` must be at module level — it generates consts, functions, and
+// `mdx_pages!` must be at module level: it generates consts, functions, and
 // inventory registrations that cannot appear inside a function body.
 //
 // Each discovered page registers as a `PageFn` in the link-time inventory.
@@ -17,7 +17,7 @@ async fn blog() -> Result {
             for post in posts {
                 <li>
                     <a href=(post.path)>(post.title.unwrap_or(post.slug))</a>
-                    " — "
+                    " - "
                     (post.date.unwrap_or("undated"))
                 </li>
             }

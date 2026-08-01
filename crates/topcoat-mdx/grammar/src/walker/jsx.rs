@@ -37,7 +37,7 @@ pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
         "false" => return syn::parse_quote!(false),
         _ => {}
     }
-    // Try integer — but reject leading-zero strings like "007" (syn 2.0
+    // Try integer, but reject leading-zero strings like "007" (syn 2.0
     // accepts them as valid LitInt values, so we guard manually).
     if !(value.len() > 1 && value.starts_with('0'))
         && let Ok(lit) = syn::parse_str::<syn::LitInt>(value)
@@ -184,7 +184,7 @@ pub(crate) fn walk_jsx_attributes(
                     Some(markdown::mdast::AttributeValue::Literal(s)) => {
                         coerce_attr_value(s, ctx.span)
                     }
-                    None => syn::parse_quote!(true), // bare attribute → true
+                    None => syn::parse_quote!(true), // bare attribute becomes true
                     Some(markdown::mdast::AttributeValue::Expression(_)) => {
                         // Expression attributes like `{value}` are out of scope.
                         ctx.errors.borrow_mut().push(format!(
@@ -883,7 +883,7 @@ mod tests {
         );
     }
 
-    // ---- self-closing JSX tag fix — tracer tests ----
+    // ---- self-closing JSX tag fix: tracer tests ----
 
     #[test]
     fn walk_self_closing_jsx_component() {
@@ -948,7 +948,7 @@ mod tests {
     #[test]
     fn walk_raw_html_does_not_produce_element() {
         // After html_flow/html_text are disabled, raw HTML like <div>content</div>
-        // is no longer parsed as Node::Html — it appears as text content.
+        // is no longer parsed as Node::Html; it appears as text content.
         // The walker should NOT produce a <div> element from raw HTML.
         let ctx = WalkContext::empty();
         let nodes = parse_and_walk_ctx(&ctx, "<div>content</div>");

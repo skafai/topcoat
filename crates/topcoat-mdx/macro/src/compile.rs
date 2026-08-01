@@ -38,7 +38,7 @@ pub(crate) struct CompiledMdxResult {
 /// Used by both [`compile_mdx_file`] (`compile_mdx!`, `mdx_page!`) and
 /// [`generate_page_registration`] (`mdx_pages!`). The `label` parameter controls
 /// the prefix in error messages. The `overrides` parameter registers HTML
-/// element → component substitutions (e.g., `"a" => custom_link`). When
+/// element-to-component substitutions (e.g., `"a" => custom_link`). When
 /// `wrapper` is `Some`, uses `ViewWriter::new_nested()` so the output tokens
 /// are suitable for a component `child:` prop.
 pub(crate) fn parse_and_walk_mdx(

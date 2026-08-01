@@ -8,7 +8,7 @@ mdx_pages!("content/blog", prefix = "/blog");
 let router = Router::builder().discover().build();
 ```
 
-`mdx_pages!` must be placed at module level — it generates consts, functions, and inventory registrations that cannot appear inside a function body.
+`mdx_pages!` must be placed at module level, since it generates consts, functions, and inventory registrations that cannot appear inside a function body.
 
 # Combining with `module_router!`
 
@@ -23,7 +23,7 @@ pub fn router() -> Router {
 }
 ```
 
-Without `.discover()`, the `#[page]`, `#[layout]`, and `#[route]` items in your module tree work fine — but any pages registered by `mdx_pages!` will not appear on the router.
+Without `.discover()`, the `#[page]`, `#[layout]`, and `#[route]` items in your module tree work fine, but any pages registered by `mdx_pages!` will not appear on the router.
 
 # Syntax
 

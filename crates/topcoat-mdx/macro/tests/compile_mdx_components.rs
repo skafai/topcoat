@@ -191,7 +191,7 @@ mod unknown_component_error {
 
     /// Tests that walking MDX content with an unknown `PascalCase` element
     /// pushes an error into ctx.errors. This is walker-level, not
-    /// macro-level — the `compile_mdx`! proc-macro is not exercised here.
+    /// macro-level: the `compile_mdx`! proc-macro is not exercised here.
     #[test]
     fn walker_reports_unknown_component() {
         // Parse MDX with an unregistered component.
@@ -228,7 +228,7 @@ After";
     }
 
     /// Tests that walking a fixture file with an unregistered component
-    /// pushes an error. This is walker-level, not macro-level — the
+    /// pushes an error. This is walker-level, not macro-level: the
     /// `compile_mdx`! proc-macro is not exercised here.
     #[test]
     fn walker_reports_unknown_component_from_fixture() {
@@ -265,7 +265,7 @@ After";
 }
 
 // ---------------------------------------------------------------------------
-// Task 2: Integration test fixtures — comprehensive component coverage
+// Task 2: Integration test fixtures, comprehensive component coverage
 // ---------------------------------------------------------------------------
 
 // --- components_nested: component containing component ---

@@ -19,9 +19,9 @@ pub mod node;
 /// Context threaded through the walker so JSX element handlers can look up
 /// registered components and report diagnostics.
 pub struct WalkContext<'a> {
-    /// Component registry: tag-name → Rust path pairs.
+    /// Component registry: tag-name to Rust path pairs.
     pub components: &'a [(String, Path)],
-    /// HTML element override registry: tag-name → Rust path pairs.
+    /// HTML element override registry: tag-name to Rust path pairs.
     /// When a tag is registered here, the walker emits a `Node::Component`
     /// instead of a `Node::Element` for that tag.
     pub overrides: &'a [(&'static str, Path)],
@@ -32,7 +32,7 @@ pub struct WalkContext<'a> {
     /// `compile_mdx!` file-path argument so diagnostics point to the
     /// invocation site rather than `call_site()`.
     pub span: Span,
-    /// Link/image definition registry: normalized identifier → (url, title).
+    /// Link/image definition registry: normalized identifier to (url, title).
     /// Built during the pre-scan pass so that `LinkReference` and
     /// `ImageReference` nodes can be resolved during the main walk.
     pub definitions: HashMap<String, (String, Option<String>)>,
@@ -44,7 +44,7 @@ pub struct WalkContext<'a> {
     /// in the document-end section.
     pub footnote_order: RefCell<Vec<String>>,
     /// Heading slug counter for duplicate ID handling.
-    /// Maps base slug → occurrence count so that "# Hello" followed
+    /// Maps base slug to occurrence count so that "# Hello" followed
     /// by another "# Hello" produces ids "hello" and "hello-1".
     /// Wrapped in `RefCell` for interior mutability (same pattern as errors,
     /// `footnote_order`).
@@ -169,7 +169,7 @@ pub enum FrontmatterFormat {
 /// Returns `Some((value_string, format))` when a `Node::Yaml` or `Node::Toml`
 /// is the first root child, `None` otherwise.
 ///
-/// Note: `MdxjsEsm` frontmatter is not extracted — it contains JavaScript
+/// Note: `MdxjsEsm` frontmatter is not extracted, as it contains JavaScript
 /// expressions that are not deserializable as Rust types.
 #[must_use]
 pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<(String, FrontmatterFormat)> {
@@ -413,7 +413,7 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
 /// `mdast::Html` nodes are never produced by the parser.
 pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, writer: &mut ViewWriter) {
     if let markdown::mdast::Node::Text(t) = node {
-        // Text content — escaped for HtmlContext::Text.
+        // Text content, escaped for HtmlContext::Text.
         writer.write_text(&t.value);
     } else {
         // For all other node types, construct view nodes and write them.
