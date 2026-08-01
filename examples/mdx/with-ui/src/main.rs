@@ -24,7 +24,7 @@ async fn main() {
 
 // --- Layout ------------------------------------------------------------------
 
-#[layout]
+#[layout("/")]
 async fn root_layout(cx: &Cx, slot: Result) -> Result {
     view! {
         cx =>
@@ -54,9 +54,14 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
 async fn home(_cx: &Cx) -> Result {
     compile_mdx!(
         mdx_components! {
-            Card => components::card,
-            Badge => components::badge,
-            CtaButton => components::cta_button,
+            Card => components::card::card,
+            Card_Header => components::card::card_header,
+            Card_Title => components::card::card_title,
+            Card_Description => components::card::card_description,
+            Card_Content => components::card::card_content,
+            Card_Footer => components::card::card_footer,
+            Badge => components::badge::badge,
+            Button => components::button::button,
         },
         "pages/index.mdx"
     )
