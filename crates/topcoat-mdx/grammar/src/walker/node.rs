@@ -492,7 +492,8 @@ mod tests {
 
     #[test]
     fn blocks_data_uri_in_image() {
-        let nodes = parse_and_walk("![x](data:image/svg+xml,<svg onload=alert(1)>)");
+        // Use a base64 data URI to avoid <svg> being parsed as JSX after HTML disable.
+        let nodes = parse_and_walk("![x](data:image/svg+xml;base64,PHN2Zw==)");
         assert_eq!(nodes.len(), 1);
         if let Node::Element(p) = &nodes[0] {
             let has_img = p.children().iter().any(|c| {
