@@ -72,6 +72,9 @@ members = [
     "examples/mdx/docs-site",
     "examples/mdx/with-ui",
     "examples/mdx/mdx-pages",
+    "examples/mdx/overrides",
+    "examples/mdx/content-index",
+    "examples/mdx/gfm",
 
     "benchmarks/topcoat",
 ]
