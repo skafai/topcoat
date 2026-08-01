@@ -87,6 +87,7 @@ mod wrapper_test {
 
 // ---- mdx_pages! with components and overrides ----
 
+#[allow(dead_code)]
 mod components_and_overrides_test {
     use topcoat::view::{View, component, view};
     use topcoat_mdx_macro::mdx_pages;

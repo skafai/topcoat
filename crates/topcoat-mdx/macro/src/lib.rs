@@ -542,6 +542,11 @@ fn compile_mdx_file(
 ///     ) }
 /// }
 /// ```
+///
+/// # Panics
+/// Panics if `has_wrapper` is true but `wrapper_path` is none — this indicates
+/// a bug in `compile_mdx_file`, which must always set `wrapper_path` when
+/// `has_wrapper` is true.
 #[proc_macro]
 pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<CompileMdxInput>(tokens) {
@@ -922,14 +927,10 @@ fn generate_page_registration(
             })
         };
 
-        match value_to_expr(&deserialized, Some(fm_type), span) {
-            Ok(expr) => {
-                quote! {
-                    #[allow(clippy::approx_constant)]
-                    const #fm_const_name: #fm_type = #expr;
-                }
-            }
-            Err(e) => return Err(e),
+        let expr = value_to_expr(&deserialized, Some(fm_type), span)?;
+        quote! {
+            #[allow(clippy::approx_constant)]
+            const #fm_const_name: #fm_type = #expr;
         }
     } else {
         quote! {}
