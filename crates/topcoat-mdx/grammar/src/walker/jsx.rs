@@ -873,6 +873,79 @@ mod tests {
         );
     }
 
+    // ---- Phase 03.2: self-closing JSX tag fix — tracer tests ----
+    // These tests FAIL until html_flow/html_text are disabled in parse.rs.
+
+    #[test]
+    fn walk_self_closing_jsx_component() {
+        // <Widget /> should be parsed as MdxJsxFlowElement (not raw Html)
+        // and produce Node::Component when "Widget" is registered.
+        let component_path: Path = syn::parse_quote!(my::widget);
+        let registry = vec![("Widget".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "<Widget />");
+        assert_eq!(nodes.len(), 1, "self-closing JSX should produce one node");
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "<Widget /> should produce Node::Component but got non-Component node"
+        );
+        if let Node::Component(comp) = &nodes[0] {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "widget"
+            );
+            assert!(comp.children.is_empty(), "self-closing should have no children");
+        }
+        // Also verify no errors were pushed.
+        assert!(
+            ctx.errors.borrow().is_empty(),
+            "should not push errors for registered self-closing component"
+        );
+    }
+
+    #[test]
+    fn walk_jsx_with_content_not_html() {
+        // <Widget>text</Widget> should parse as MdxJsxFlowElement (not raw Html)
+        // and produce Node::Component when "Widget" is registered.
+        let component_path: Path = syn::parse_quote!(my::widget);
+        let registry = vec![("Widget".to_string(), component_path)];
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "<Widget>text</Widget>");
+        assert_eq!(nodes.len(), 1, "JSX with content should produce one node");
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "<Widget>text</Widget> should produce Node::Component but got non-Component node"
+        );
+        if let Node::Component(comp) = &nodes[0] {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "widget"
+            );
+            assert_eq!(comp.children.len(), 1, "should have one child (text)");
+        }
+    }
+
+    #[test]
+    fn walk_raw_html_renders_as_text() {
+        // After html_flow/html_text are disabled, raw HTML like <div>content</div>
+        // is no longer parsed as Node::Html — it appears as text content.
+        // The walker should NOT produce a <div> element from raw HTML.
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "<div>content</div>");
+        // Verify no <div> Element is produced (raw HTML does not render as DOM).
+        let has_div = nodes.iter().any(|n| {
+            if let Node::Element(e) = n {
+                e.name().string_name().as_deref() == Some("div")
+            } else {
+                false
+            }
+        });
+        assert!(
+            !has_div,
+            "raw <div> should NOT produce an Element node after HTML disable"
+        );
+    }
+
     // ---- Phase 02: tracer integration test ----
 
     #[test]
