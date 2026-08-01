@@ -453,7 +453,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     // Generate route registrations.
     let route_results: Vec<proc_macro2::TokenStream> = page_entries
         .iter()
-        .filter_map(|entry| {
+        .map(|entry| {
             let route_path = derive_route_path(
                 &canonical_scan_dir,
                 &entry.file_path,
@@ -468,8 +468,8 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
                 input.frontmatter_type.as_ref(),
                 span,
             ) {
-                Ok(ts) => Some(ts),
-                Err(e) => Some(e.to_compile_error()),
+                Ok(ts) => ts,
+                Err(e) => e.to_compile_error(),
             }
         })
         .collect();
@@ -479,9 +479,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
 
     // Derive a stable identifier from the directory path for the index name.
     let index_suffix = dir_str
-        .replace(std::path::MAIN_SEPARATOR, "_")
-        .replace('/', "_")
-        .replace('-', "_")
+        .replace([std::path::MAIN_SEPARATOR, '/', '-'], "_")
         .to_uppercase();
 
     let index_const_name = Ident::new(

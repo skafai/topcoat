@@ -9,7 +9,7 @@ use topcoat_mdx_grammar::{
         walk_to_writer,
     },
 };
-use topcoat_view_grammar::view::ViewWriter;
+use topcoat_view_grammar::view::hir::ViewBuilder;
 
 // ---------------------------------------------------------------------------
 // Common compile logic shared by compile_mdx! and mdx_page!
@@ -24,7 +24,7 @@ pub(crate) struct CompiledMdxResult {
     /// Raw frontmatter content and its format (YAML or TOML).
     pub(crate) frontmatter_content: Option<(String, FrontmatterFormat)>,
     /// View tokens from the walker. When a wrapper was requested, these are
-    /// produced by `ViewWriter::new_nested()` (plain View expression, no
+    /// produced by `Scope::emit_view()` (plain View expression, no
     /// async wrapper).
     pub(crate) view_tokens: proc_macro2::TokenStream,
     /// Whether a wrapper component was requested.
@@ -33,7 +33,7 @@ pub(crate) struct CompiledMdxResult {
     pub(crate) wrapper_path: Option<SynPath>,
     /// Excerpt tokens from the walker when `<!-- more -->` is present.
     /// Contains the view tokens for the content before the excerpt marker,
-    /// produced by a separate ViewWriter.
+    /// produced by a separate `ViewBuilder`.
     ///
     /// TODO: Currently computed but not emitted to generated code. The
     /// caller (`compile_mdx!`, `mdx_page!`) only uses `view_tokens`.
@@ -49,7 +49,7 @@ pub(crate) struct CompiledMdxResult {
 /// [`generate_page_registration`] (`mdx_pages!`). The `label` parameter controls
 /// the prefix in error messages. The `overrides` parameter registers HTML
 /// element → component substitutions (e.g., `"a" => custom_link`). When
-/// `wrapper` is `Some`, uses `ViewWriter::new_nested()` so the output tokens
+/// `wrapper` is `Some`, uses `Scope::emit_view()` so the output tokens
 /// are suitable for a component `child:` prop.
 pub(crate) fn parse_and_walk_mdx(
     components: &[(String, SynPath)],
@@ -85,32 +85,28 @@ pub(crate) fn parse_and_walk_mdx(
         (None, &[] as &[markdown::mdast::Node])
     };
 
-    // Walk mdast into ViewWriter(s), skipping the frontmatter node.
-    // Use new_nested() when a wrapper is specified so the tokens are suitable
-    // for a component `child:` prop (no async wrapper).
-    let mut writer = if wrapper.is_some() {
-        ViewWriter::new_nested()
-    } else {
-        ViewWriter::new()
-    };
+    // Walk mdast into ViewBuilder(s), skipping the frontmatter node.
+    // Emit via `Scope::emit_view()` when a wrapper is specified so the
+    // tokens are suitable for a component `child:` prop (no async wrapper).
+    let mut builder = ViewBuilder::new();
 
-    // Two-writer approach: if an excerpt split point exists, walk excerpt
-    // children into a separate writer and body children into the main writer.
-    // Excerpt children are walked through `walk_excerpt_to_writer` which
-    // strips `<!-- more -->` from text content so the marker does not appear
-    // as visible text in rendered output (CR-01).
+    // Two-builder approach: if an excerpt split point exists, walk excerpt
+    // children into a separate builder and body children into the main
+    // builder. Excerpt children are walked through `walk_excerpt_to_writer`
+    // which strips `<!-- more -->` from text content so the marker does not
+    // appear as visible text in rendered output (CR-01).
     let excerpt_tokens = if let Some(split_idx) = excerpt_split {
-        let mut excerpt_writer = ViewWriter::new_nested();
+        let mut excerpt_builder = ViewBuilder::new();
         for child in &post_fm_children[..split_idx] {
-            walk_excerpt_to_writer(&ctx, child, &mut excerpt_writer);
+            walk_excerpt_to_writer(&ctx, child, &mut excerpt_builder);
         }
         for child in &post_fm_children[split_idx..] {
-            walk_to_writer(&ctx, child, &mut writer);
+            walk_to_writer(&ctx, child, &mut builder);
         }
-        Some(excerpt_writer.into_token_stream())
+        Some(excerpt_builder.finish().emit_view())
     } else {
         for child in post_fm_children {
-            walk_to_writer(&ctx, child, &mut writer);
+            walk_to_writer(&ctx, child, &mut builder);
         }
         None
     };
@@ -125,7 +121,12 @@ pub(crate) fn parse_and_walk_mdx(
         return Err(combined_err);
     }
 
-    let inner_tokens = writer.into_token_stream();
+    let scope = builder.finish();
+    let inner_tokens = if wrapper.is_some() {
+        scope.emit_view()
+    } else {
+        scope.emit_root()
+    };
 
     Ok(CompiledMdxResult {
         frontmatter_content,

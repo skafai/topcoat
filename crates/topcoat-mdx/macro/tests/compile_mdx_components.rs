@@ -197,7 +197,7 @@ mod unknown_component_error {
     use std::path::Path;
 
     use topcoat_mdx_grammar::walker::WalkContext;
-    use topcoat_view_grammar::view::ViewWriter;
+    use topcoat_view_grammar::view::hir::ViewBuilder;
 
     /// Tests that walking MDX content with an unknown `PascalCase` element
     /// pushes an error into ctx.errors. This is walker-level, not
@@ -215,10 +215,10 @@ After";
         let root = markdown::to_mdast(content, &options).unwrap();
 
         let ctx = WalkContext::empty();
-        let mut writer = ViewWriter::new();
+        let mut builder = ViewBuilder::new();
         if let markdown::mdast::Node::Root(r) = root {
             for child in &r.children {
-                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
+                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut builder);
             }
         }
 
@@ -259,10 +259,10 @@ After";
         let root = markdown::to_mdast(&content, &options).unwrap();
 
         let ctx = WalkContext::empty();
-        let mut writer = ViewWriter::new();
+        let mut builder = ViewBuilder::new();
         if let markdown::mdast::Node::Root(r) = root {
             for child in &r.children {
-                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut writer);
+                topcoat_mdx_grammar::walker::walk_to_writer(&ctx, child, &mut builder);
             }
         }
 
