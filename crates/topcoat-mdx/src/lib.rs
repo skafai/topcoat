@@ -1,9 +1,6 @@
 #![doc = include_str!("../docs/module.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-mod frontmatter;
-
-pub use frontmatter::Frontmatter;
 pub use topcoat_mdx_macro::{compile_mdx, mdx_page, mdx_pages};
 
 /// An index entry for a single `.mdx` or `.md` page discovered by `mdx_pages!`.

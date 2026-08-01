@@ -1,17 +1,4 @@
-#![allow(clippy::approx_constant)]
-
-use serde::Deserialize;
 use topcoat::{context::CxTestBuilder, mdx::compile_mdx};
-
-// ---- Frontmatter fixture ----
-
-/// Frontmatter type matching `frontmatter_basic.mdx`.
-#[derive(Debug, Deserialize, PartialEq)]
-struct BlogMeta {
-    title: String,
-    date: String,
-    tags: Vec<String>,
-}
 
 #[tokio::test]
 async fn compile_mdx_with_frontmatter_compiles() {
@@ -74,22 +61,7 @@ async fn compile_mdx_complex_frontmatter() {
     );
 }
 
-// ---- Frontmatter extractor ----
-
-#[test]
-fn frontmatter_struct_matches_fixture() {
-    // Verify the BlogMeta struct can be constructed with expected values.
-    let meta = BlogMeta {
-        title: "Hello".to_string(),
-        date: "2024-01-01".to_string(),
-        tags: vec!["rust".to_string(), "mdx".to_string()],
-    };
-    assert_eq!(meta.title, "Hello");
-    assert_eq!(meta.date, "2024-01-01");
-    assert_eq!(meta.tags.len(), 2);
-}
-
-// ---- .md file with frontmatter (IN-05) ----
+// ---- .md file with frontmatter ----
 
 #[tokio::test]
 async fn compile_mdx_handles_md_extension_with_frontmatter() {

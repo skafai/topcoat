@@ -3,7 +3,7 @@ mod components;
 use topcoat::{
     Result,
     mdx::compile_mdx,
-    router::{layout, page, Router, RouterBuilderDiscoverExt},
+    router::{Router, RouterBuilderDiscoverExt, layout, page},
     view::view,
 };
 
@@ -32,12 +32,16 @@ async fn root_layout(slot: Result) -> Result {
             </head>
             <body>
                 <nav>
-                    <a href="/footnotes">"Footnotes"</a> " | "
-                    <a href="/references">"Reference Links"</a> " | "
-                    <a href="/overrides">"Overrides"</a> " | "
-                    <a href="/wrappers">"Wrappers"</a> " | "
-                    <a href="/excerpts">"Excerpts"</a> " | "
-                    <a href="/code-blocks">"Code Blocks"</a> " | "
+                    <a href="/footnotes">"Footnotes"</a>
+                    " | "
+                    <a href="/references">"Reference Links"</a>
+                    " | "
+                    <a href="/overrides">"Overrides"</a>
+                    " | "
+                    <a href="/wrappers">"Wrappers"</a>
+                    " | "
+                    <a href="/code-blocks">"Code Blocks"</a>
+                    " | "
                     <a href="/heading-ids">"Heading IDs"</a>
                 </nav>
                 <hr />
@@ -59,7 +63,6 @@ async fn home() -> Result {
             <li><a href="/references">"Reference Links"</a></li>
             <li><a href="/overrides">"Element Overrides"</a></li>
             <li><a href="/wrappers">"Content Wrappers"</a></li>
-            <li><a href="/excerpts">"Excerpts"</a></li>
             <li><a href="/code-blocks">"Code Block Meta"</a></li>
             <li><a href="/heading-ids">"Heading IDs"</a></li>
         </ul>
@@ -88,15 +91,10 @@ async fn overrides() -> Result {
 #[page("/wrappers")]
 async fn wrappers() -> Result {
     compile_mdx!(
-        mdx_components!{},
+        mdx_components! {},
         wrapper = components::page_wrapper,
         "pages/wrappers.mdx"
     )
-}
-
-#[page("/excerpts")]
-async fn excerpts() -> Result {
-    compile_mdx!("pages/excerpts.mdx")
 }
 
 #[page("/code-blocks")]
