@@ -1,7 +1,7 @@
 use topcoat::{
     Result,
     context::Cx,
-    router::{layout, module_router, page, RouterBuilderDiscoverExt},
+    router::{layout, module_router, page},
     view::view,
 };
 
@@ -15,10 +15,7 @@ async fn main() {
 // --- Router ------------------------------------------------------------------
 
 pub fn router() -> topcoat::router::Router {
-    // `module_router!` discovers `#[page]` functions from Rust modules.
-    // `.discover()` picks up the `PageFn` entries that `mdx_pages!` registers
-    // via `inventory::submit!` for the individual blog posts.
-    module_router!().discover().build()
+    module_router!().build()
 }
 
 // --- Layout ------------------------------------------------------------------
