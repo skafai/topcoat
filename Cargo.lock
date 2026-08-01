@@ -3201,6 +3201,7 @@ dependencies = [
 name = "topcoat-mdx-grammar"
 version = "0.5.0"
 dependencies = [
+ "heck",
  "markdown",
  "proc-macro2",
  "quote",

@@ -12,24 +12,18 @@ async fn tracer_compiles() {
 
 #[tokio::test]
 async fn tracer_renders() {
-    // Combined test: verifies the tracer fixture compiles, renders raw HTML
-    // unescaped, and includes mixed content (markdown + raw HTML).
-    // (Consolidated from tracer_compiles + tracer_raw_html_passthrough +
-    // partially overlapping raw_html_renders_unescaped per IN-01.)
+    // Verifies the tracer fixture compiles and renders mixed markdown content.
+    // Raw HTML passthrough is disabled (Plan 03.2-01); the fixture uses pure markdown.
     let view = compile_mdx!("tests/fixtures/tracer.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
-    // The raw HTML should appear verbatim, not double-escaped.
-    assert!(
-        html.contains(r#"<div class="raw">Raw HTML</div>"#),
-        "raw HTML should pass through unescaped. Got:\n{html}",
-    );
-    // Verify it's NOT escaped as &lt;div&gt;.
-    assert!(
-        !html.contains("&lt;div"),
-        "raw HTML should NOT be escaped. Got:\n{html}",
-    );
+    // Should render the heading and paragraph.
+    assert!(html.contains("<h1>Tracer Test</h1>"), "should have h1. Got:\n{html}");
+    assert!(html.contains("<strong>bold</strong>"), "should have bold. Got:\n{html}");
+    assert!(html.contains("<em>italic</em>"), "should have italic. Got:\n{html}");
+    // Blockquote replaced the old raw HTML div.
+    assert!(html.contains("<blockquote>"), "should have blockquote. Got:\n{html}");
 }
 
 // ---- CommonMark fixture ----
@@ -157,6 +151,8 @@ async fn gfm_renders() {
 }
 
 // ---- Raw HTML fixture ----
+// Raw HTML passthrough is disabled (Plan 03.2-01). These tests verify
+// that raw HTML blocks are dropped by the parser rather than passed through.
 
 #[tokio::test]
 async fn raw_html_compiles() {
@@ -164,31 +160,24 @@ async fn raw_html_compiles() {
 }
 
 #[tokio::test]
-async fn raw_html_renders_unescaped() {
+async fn raw_html_dropped_when_disabled() {
     let view =
         compile_mdx!("tests/fixtures/raw_html.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
-    // Raw HTML block should appear verbatim (MDX-05).
+    // Raw HTML blocks should NOT appear when passthrough is disabled.
     assert!(
-        html.contains(r#"<div class="test">Raw HTML block</div>"#),
-        "raw HTML block should pass through unescaped. Got:\n{html}"
-    );
-
-    // Another raw HTML block (table) should appear verbatim.
-    assert!(
-        html.contains(r#"<table class="raw-table">"#),
-        "raw HTML table should pass through unescaped. Got:\n{html}"
-    );
-
-    // Verify NOT escaped as &lt;div&gt; or similar.
-    assert!(
-        !html.contains("&lt;div"),
-        "raw HTML should NOT be escaped as &lt;div&gt;. Got:\n{html}"
+        !html.contains(r#"<div class="test">"#),
+        "raw HTML div should be dropped when passthrough is disabled. Got:\n{html}"
     );
     assert!(
-        !html.contains("&lt;table"),
-        "raw HTML should NOT be escaped as &lt;table&gt;. Got:\n{html}"
+        !html.contains(r#"<table class="raw-table">"#),
+        "raw HTML table should be dropped when passthrough is disabled. Got:\n{html}"
+    );
+    // Markdown content between the HTML blocks should still render.
+    assert!(
+        html.contains("This is a regular paragraph"),
+        "markdown paragraphs should still render. Got:\n{html}"
     );
 }
