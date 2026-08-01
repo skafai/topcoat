@@ -1,7 +1,7 @@
 use topcoat::{
     Result,
     mdx::compile_mdx,
-    router::{page, Router},
+    router::{Router, page},
 };
 
 // --- Server -----------------------------------------------------------------
@@ -14,10 +14,7 @@ async fn main() {
 // --- Router -----------------------------------------------------------------
 
 fn router() -> Router {
-    Router::builder()
-        .page(home)
-        .page(about)
-        .build()
+    Router::builder().page(home).page(about).build()
 }
 
 // --- Pages ------------------------------------------------------------------

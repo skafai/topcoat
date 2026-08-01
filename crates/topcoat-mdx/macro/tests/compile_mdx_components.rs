@@ -27,11 +27,7 @@ mod mock {
     // --- Callout: var prop ---
     #[component]
     pub async fn callout(var: &'static str, #[default] child: View) -> Result {
-        view! {
-            <div class="mdx-callout" data-var=(var)>
-                (child)
-            </div>
-        }
+        view! { <div class="mdx-callout" data-var=(var)>(child)</div> }
     }
 
     // --- Divider: no props ---
@@ -55,20 +51,14 @@ mod mock {
     // --- NestedOuter: name prop + child ---
     #[component]
     pub async fn nested_outer(name: &'static str, #[default] child: View) -> Result {
-        view! {
-            <div class="mdx-nested-outer" data-name=(name)>
-                (child)
-            </div>
-        }
+        view! { <div class="mdx-nested-outer" data-name=(name)>(child)</div> }
     }
 
     // --- NestedInner: count prop + child ---
     #[component]
     pub async fn nested_inner(count: i64, #[default] child: View) -> Result {
         view! {
-            <div class="mdx-nested-inner" data-count=(count.to_string())>
-                (child)
-            </div>
+            <div class="mdx-nested-inner" data-count=(count.to_string())>(child)</div>
         }
     }
 
@@ -76,12 +66,13 @@ mod mock {
     #[component]
     pub async fn config(enabled: bool, count: i64, ratio: f64, label: &'static str) -> Result {
         view! {
-            <div class="mdx-config"
+            <div
+                class="mdx-config"
                 data-enabled=(enabled.to_string())
                 data-count=(count.to_string())
                 data-ratio=(ratio.to_string())
-                data-label=(label)>
-            </div>
+                data-label=(label)
+            ></div>
         }
     }
 
@@ -89,8 +80,7 @@ mod mock {
     #[component]
     pub async fn bare_attr(#[default] dismissible: bool) -> Result {
         view! {
-            <div class="mdx-bare-attr" data-dismissible=(dismissible.to_string())>
-            </div>
+            <div class="mdx-bare-attr" data-dismissible=(dismissible.to_string())></div>
         }
     }
 }
