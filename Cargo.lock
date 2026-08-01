@@ -1594,10 +1594,19 @@ checksum = "8863b587001c1b9a8a4e36008cebc6b3612cb1226fe2de94858e06092687b608"
 [[package]]
 name = "mdx-blog"
 version = "0.5.0"
+dependencies = [
+ "serde",
+ "tokio",
+ "topcoat",
+]
 
 [[package]]
 name = "mdx-components"
 version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+]
 
 [[package]]
 name = "mdx-discover"
@@ -1606,6 +1615,10 @@ version = "0.5.0"
 [[package]]
 name = "mdx-docs-site"
 version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+]
 
 [[package]]
 name = "mdx-simple"
