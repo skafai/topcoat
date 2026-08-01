@@ -145,11 +145,6 @@ pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> N
 }
 
 /// Walks a single mdast node into zero or more view `Node`s.
-///
-/// # Panics
-/// Panics if an override is registered for a tag (verified via `has_override`)
-/// but `try_apply_override` returns `None` — this should not happen when the
-/// `has_override` guard is used, as both check the same `ctx.overrides` slice.
 pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
         markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
@@ -159,8 +154,7 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
             let children = walk_nodes(ctx, &h.children);
-            if has_override(ctx, &tag) {
-                // try_apply_override will succeed here since we checked has_override first.
+            if ctx.overrides.iter().any(|(t, _)| *t == tag) {
                 vec![try_apply_override(ctx, &tag, &Attributes::default(), children).unwrap()]
             } else {
                 vec![html_element(&tag, children)]
@@ -182,8 +176,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![html_element("blockquote", walk_nodes(ctx, &b.children))]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
-            if has_override(ctx, "hr") {
-                vec![try_apply_override(ctx, "hr", &Attributes::default(), Nodes::new()).unwrap()]
+            if let Some(node) = try_apply_override(ctx, "hr", &Attributes::default(), Nodes::new()) {
+                vec![node]
             } else {
                 vec![Node::Element(Box::new(void_element("hr")))]
             }
@@ -307,8 +301,7 @@ fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     let attributes = with_attributes(attrs);
     let children = walk_nodes(ctx, &link.children);
     // Check for override AFTER is_safe_url() passes (XSS protection preserved).
-    if has_override(ctx, "a") {
-        // try_apply_override will succeed here since we checked has_override first.
+    if ctx.overrides.iter().any(|(t, _)| *t == "a") {
         return try_apply_override(ctx, "a", &attributes, children).unwrap();
     }
     Node::Element(Box::new(normal_element_with_attrs(
@@ -333,8 +326,8 @@ fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> Node {
     }
     let attributes = with_attributes(attrs);
     // Check for override before constructing the <img> void element.
-    if has_override(ctx, "img") {
-        return try_apply_override(ctx, "img", &attributes, Nodes::new()).unwrap();
+    if let Some(node) = try_apply_override(ctx, "img", &attributes, Nodes::new()) {
+        return node;
     }
     Node::Element(Box::new(void_element_with_attrs("img", attributes)))
 }
@@ -350,7 +343,7 @@ fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -> Node {
     let code_el = normal_element_with_attrs("code", code_attrs, code_children);
     let pre_children = Nodes::from(vec![Node::Element(Box::new(code_el))]);
     // Check for override at the <pre> level (outermost element).
-    if has_override(ctx, "pre") {
+    if ctx.overrides.iter().any(|(t, _)| *t == "pre") {
         return try_apply_override(ctx, "pre", &Attributes::default(), pre_children).unwrap();
     }
     html_element("pre", pre_children)
@@ -607,12 +600,6 @@ pub fn try_apply_override(
         named_args,
         children,
     }))
-}
-
-/// Checks whether an override is registered for the given tag.
-#[inline]
-fn has_override(ctx: &WalkContext, tag: &str) -> bool {
-    ctx.overrides.iter().any(|(t, _)| *t == tag)
 }
 
 /// Walk JSX attributes from an mdast element into `NamedArg`s.
