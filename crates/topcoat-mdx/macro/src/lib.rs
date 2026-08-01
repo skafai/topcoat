@@ -23,7 +23,7 @@ use topcoat_core_grammar::paths::{
 };
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
-    walker::{FrontmatterFormat, extract_frontmatter, walk_to_writer},
+    walker::{FrontmatterFormat, extract_frontmatter, find_excerpt_split, walk_to_writer},
 };
 use topcoat_view_grammar::view::ViewWriter;
 
@@ -385,6 +385,10 @@ struct CompiledMdxResult {
     has_wrapper: bool,
     /// The wrapper component path (set when `has_wrapper` is true).
     wrapper_path: Option<SynPath>,
+    /// Excerpt tokens from the walker when `<!-- more -->` is present.
+    /// Contains the view tokens for the content before the excerpt marker,
+    /// produced by a separate ViewWriter.
+    excerpt_tokens: Option<proc_macro2::TokenStream>,
 }
 
 /// Shared inner logic: parse markdown content, extract frontmatter, walk mdast.
@@ -419,7 +423,17 @@ fn parse_and_walk_mdx(
         .collect();
     let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, &owned_overrides, span);
 
-    // Walk mdast into ViewWriter, skipping the frontmatter node.
+    // Determine excerpt split index from the root children (post-frontmatter).
+    let (excerpt_split, post_fm_children) = if let markdown::mdast::Node::Root(ref r) = root {
+        let start_idx = usize::from(frontmatter_content.is_some());
+        let post_fm: &[markdown::mdast::Node] = &r.children[start_idx..];
+        let split = find_excerpt_split(post_fm);
+        (split, post_fm)
+    } else {
+        (None, &[] as &[markdown::mdast::Node])
+    };
+
+    // Walk mdast into ViewWriter(s), skipping the frontmatter node.
     // Use new_nested() when a wrapper is specified so the tokens are suitable
     // for a component `child:` prop (no async wrapper).
     let mut writer = if wrapper.is_some() {
@@ -427,12 +441,24 @@ fn parse_and_walk_mdx(
     } else {
         ViewWriter::new()
     };
-    if let markdown::mdast::Node::Root(r) = root {
-        let start_idx = usize::from(frontmatter_content.is_some());
-        for child in r.children.iter().skip(start_idx) {
+
+    // Two-writer approach: if an excerpt split point exists, walk excerpt
+    // children into a separate writer and body children into the main writer.
+    let excerpt_tokens = if let Some(split_idx) = excerpt_split {
+        let mut excerpt_writer = ViewWriter::new_nested();
+        for child in &post_fm_children[..split_idx] {
+            walk_to_writer(&ctx, child, &mut excerpt_writer);
+        }
+        for child in &post_fm_children[split_idx..] {
             walk_to_writer(&ctx, child, &mut writer);
         }
-    }
+        Some(excerpt_writer.into_token_stream())
+    } else {
+        for child in post_fm_children {
+            walk_to_writer(&ctx, child, &mut writer);
+        }
+        None
+    };
 
     // Drain walker error buffer into syn::Error diagnostics.
     let errors: Vec<String> = ctx.errors.borrow_mut().drain(..).collect();
@@ -451,6 +477,7 @@ fn parse_and_walk_mdx(
         view_tokens: inner_tokens,
         has_wrapper: wrapper.is_some(),
         wrapper_path: wrapper.cloned(),
+        excerpt_tokens,
     })
 }
 

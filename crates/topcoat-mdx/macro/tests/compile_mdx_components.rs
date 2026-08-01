@@ -124,8 +124,8 @@ mod components_basic {
         .expect("view should render successfully");
         let html = view.render(&cx);
 
-        // Should have the heading from markdown.
-        assert!(html.contains("<h1>"), "should have <h1>. Got:\n{html}");
+        // Should have the heading from markdown (with id attribute).
+        assert!(html.contains("<h1 "), "should have <h1>. Got:\n{html}");
 
         // Should have the paragraph.
         assert!(html.contains("<p>"), "should have <p>. Got:\n{html}");
@@ -163,7 +163,7 @@ mod md_backward_compat {
         let cx = CxTestBuilder::new().build();
         let html = view.render(&cx);
 
-        assert!(html.contains("<h1>"), "should have <h1>. Got:\n{html}");
+        assert!(html.contains("<h1 "), "should have <h1>. Got:\n{html}");
         assert!(html.contains("<p>"), "should have <p>. Got:\n{html}");
         assert!(html.contains("<ul>"), "should have <ul>. Got:\n{html}");
         assert!(html.contains("<li>"), "should have <li>. Got:\n{html}");
@@ -182,8 +182,8 @@ mod md_backward_compat {
         let cx = CxTestBuilder::new().build();
         let html = view.render(&cx);
 
-        assert!(html.contains("<h2>"), "should have <h2>. Got:\n{html}");
-        assert!(html.contains("<pre>"), "should have <pre>. Got:\n{html}");
+        assert!(html.contains("<h2 "), "should have <h2>. Got:\n{html}");
+        assert!(html.contains("<pre"), "should have <pre>. Got:\n{html}");
         assert!(
             html.contains("<blockquote>"),
             "should have <blockquote>. Got:\n{html}"
@@ -464,8 +464,8 @@ mod components_mixed_content {
         .expect("view should render successfully");
         let html = view.render(&cx);
 
-        // Should have markdown heading and paragraphs.
-        assert!(html.contains("<h1>"), "should have heading. Got:\n{html}");
+        // Should have markdown heading and paragraphs (heading has id attribute).
+        assert!(html.contains("<h1 "), "should have heading. Got:\n{html}");
         assert!(html.contains("<p>"), "should have paragraphs. Got:\n{html}");
         // Should have the Badge component.
         assert!(

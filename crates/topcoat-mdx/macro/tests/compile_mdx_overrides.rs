@@ -101,7 +101,8 @@ mod mock_all {
 
     /// Heading override component that adds an anchor class.
     #[component]
-    pub async fn heading(#[default] child: View) -> Result {
+    #[allow(unused_variables)]
+    pub async fn heading(id: &'static str, #[default] child: View) -> Result {
         view! {
             <div class="heading-override">
                 (child)
@@ -122,7 +123,8 @@ mod mock_all {
 
     /// Code block override component.
     #[component]
-    pub async fn code_block(#[default] child: View) -> Result {
+    #[allow(unused_variables)]
+    pub async fn code_block(data_lang: &'static str, #[default] child: View) -> Result {
         view! {
             <div class="code-block-override">
                 (child)
