@@ -1609,7 +1609,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdx-content-index"
+version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+]
+
+[[package]]
 name = "mdx-docs-site"
+version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+]
+
+[[package]]
+name = "mdx-gfm"
+version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+]
+
+[[package]]
+name = "mdx-overrides"
 version = "0.5.0"
 dependencies = [
  "tokio",
@@ -3229,12 +3253,8 @@ dependencies = [
 name = "topcoat-mdx"
 version = "0.5.0"
 dependencies = [
- "anyhow",
- "serde",
  "topcoat",
- "topcoat-core",
  "topcoat-mdx-macro",
- "topcoat-router",
 ]
 
 [[package]]

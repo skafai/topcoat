@@ -3,16 +3,13 @@
 //! Provides the `compile_mdx!` macro that reads `.mdx` or `.md` files at compile time,
 //! parses them with `markdown-rs`, walks the mdast into `view!` AST nodes,
 //! and emits tokens. Also provides `mdx_page!` for registering `.mdx` or `.md` files
-//! as page routes with frontmatter support.
+//! as page routes.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod compile;
-mod convert;
 mod input;
 mod pages;
-#[cfg(test)]
-mod tests;
 
 use std::path::Path;
 
@@ -23,11 +20,9 @@ use syn::{Ident, LitStr, Path as SynPath};
 use topcoat_core_grammar::paths::{
     topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
 };
-use topcoat_mdx_grammar::walker::FrontmatterFormat;
 
 use crate::{
     compile::compile_mdx_file,
-    convert::value_to_expr,
     input::{CompileMdxInput, MdxPageInput, MdxPagesInput},
     pages::{build_index, derive_route_path, generate_page_registration, scan_directory},
 };
@@ -144,7 +139,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         Err(e) => {
             return syn::Error::new(
                 Span::call_site(),
-                format!("mdx_page! expects: route_path, file_path [, frontmatter = Type]: {e}"),
+                format!("mdx_page! expects: route_path, file_path [, components = {{ ... }}]: {e}"),
             )
             .to_compile_error()
             .into();
@@ -190,64 +185,18 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         .and_then(|s| s.to_str())
         .unwrap_or("page")
         .replace('-', "_");
-    let file_stem_upper = file_stem.to_uppercase();
     let render_fn_name = Ident::new(&format!("__mdx_render_{file_stem}"), file_path.span());
     let unit_name = Ident::new(&format!("__mdx_page_{file_stem}"), file_path.span());
 
-    // Frontmatter const + extension insertion.
-    let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
-        (&result.frontmatter_content, &input.frontmatter_type)
-    {
-        let fm_const_name = Ident::new(
-            &format!("__MDX_PAGE_FRONTMATTER_{file_stem_upper}"),
-            file_path.span(),
-        );
-
-        // Deserialize frontmatter at compile time into serde_value::Value,
-        // dispatching on format (YAML via serde-saphyr, TOML via toml).
-        let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
-            serde_saphyr::from_str(content)
-                .unwrap_or_else(|e| panic!("mdx_page! failed to deserialize frontmatter YAML: {e}"))
-        } else {
-            toml::from_str(content)
-                .unwrap_or_else(|e| panic!("mdx_page! failed to deserialize frontmatter TOML: {e}"))
-        };
-
-        match value_to_expr(&deserialized, Some(fm_type), file_path.span()) {
-            Ok(expr) => {
-                // `expr` is already a full struct literal (e.g. `BlogMeta { name, date }`)
-                // for Map values since `root_type` was provided.
-                quote! {
-                    #[allow(clippy::approx_constant)]
-                    const #fm_const_name: #fm_type = #expr;
-                }
-            }
-            Err(e) => {
-                return e.to_compile_error().into();
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let fm_insert = if result.frontmatter_content.is_some() && input.frontmatter_type.is_some() {
-        let fm_const_name = Ident::new(
-            &format!("__MDX_PAGE_FRONTMATTER_{file_stem_upper}"),
-            file_path.span(),
-        );
-        quote! {
-            #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
-        }
-    } else {
-        quote! {}
-    };
+    // Only submit to the link-time inventory when discovery is enabled, so
+    // that `mdx_page!` also compiles without the `discover` feature.
+    let submit =
+        cfg!(feature = "discover").then(|| quote! { #topcoat_inventory::submit!(ERASED); });
 
     // Emit the page registration.
     quote! {
-        #[allow(clippy::needless_question_mark, clippy::approx_constant)]
+        #[allow(clippy::needless_question_mark)]
         const _: () = {
-            #fm_const_and_insert
-
             fn #render_fn_name(
                 __cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
@@ -255,7 +204,6 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
                 Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
                 ::std::boxed::Box::pin(async move {
-                    #fm_insert
                     #render_body
                 })
             }
@@ -275,7 +223,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
                 }
             }
 
-            #topcoat_inventory::submit!(ERASED);
+            #submit
         };
     }
     .into()
@@ -352,9 +300,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     if !canonical_scan_dir.starts_with(&canonical_manifest) {
         return syn::Error::new(
             span,
-            format!(
-                "mdx_pages! scan directory '{dir_str}' resolves outside CARGO_MANIFEST_DIR"
-            ),
+            format!("mdx_pages! scan directory '{dir_str}' resolves outside CARGO_MANIFEST_DIR"),
         )
         .to_compile_error()
         .into();
@@ -379,7 +325,6 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
                 &components,
                 &overrides,
                 input.wrapper.as_ref(),
-                input.frontmatter_type.as_ref(),
                 span,
             ) {
                 Ok(ts) => ts,
@@ -389,7 +334,11 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         .collect();
 
     // Build index entries from scanned pages.
-    let index_entries = build_index(&canonical_scan_dir, &page_entries, prefix.as_deref(), span);
+    let index_entries =
+        match build_index(&canonical_scan_dir, &page_entries, prefix.as_deref(), span) {
+            Ok(entries) => entries,
+            Err(e) => return e.to_compile_error().into(),
+        };
 
     // Derive a stable identifier from the directory path for the index name.
     let index_suffix = dir_str
