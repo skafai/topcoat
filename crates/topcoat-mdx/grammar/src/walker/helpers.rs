@@ -238,6 +238,14 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
 ///   containing `<!-- more -->`. The split is after the paragraph.
 /// - Otherwise, the node is part of the excerpt.
 ///
+/// # Limitations
+///
+/// This function does NOT scan inside `Heading`, `Blockquote`, `Code`, or
+/// other flow-level nodes. If the marker appears inside such a container
+/// (e.g. `# <!-- more -->`), it will not be detected. This is intentional:
+/// `<!-- more -->` is meant to appear at the block level or inside a
+/// paragraph, not embedded in structural elements.
+///
 /// Returns `Some(idx)` where `children[..idx]` is the excerpt portion and
 /// `children[idx..]` is the body portion. Returns `None` if no marker is found.
 pub fn find_excerpt_split(children: &[markdown::mdast::Node]) -> Option<usize> {
