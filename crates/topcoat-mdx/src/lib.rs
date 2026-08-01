@@ -1,5 +1,4 @@
 #![doc = include_str!("../docs/module.md")]
-
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod frontmatter;
@@ -56,22 +55,7 @@ inventory::collect!(MdxComponentMapping);
 #[cfg(feature = "discover")]
 inventory::collect!(MdxOverrideMapping);
 
-/// Declares a component registry mapping MDX tag names to Rust component paths.
-///
-/// Produces a braced block of `Ident => Path` pairs that `compile_mdx!` parses
-/// as the component registry argument (D-01). When the `discover` feature is
-/// enabled, also submits each mapping to the global inventory for runtime
-/// discovery.
-///
-/// ```ignore
-/// mdx_components! {
-///     Callout => components::callout,
-///     Divider => components::divider,
-/// }
-/// ```
-///
-/// Trailing commas are supported. Paths may be qualified (e.g.
-/// `crate::components::callout`).
+#[doc = include_str!("../macro/docs/mdx_components.md")]
 #[macro_export]
 macro_rules! mdx_components {
     ($($name:ident => $path:path),* $(,)?) => {{
