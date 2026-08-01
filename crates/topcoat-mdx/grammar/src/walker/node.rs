@@ -250,6 +250,55 @@ pub(crate) fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -
     html_element("del", children)
 }
 
+/// Renders a footnote section: `<ol>` with footnote items at document end.
+///
+/// Called after the main walk by `mdx_to_view` when footnotes were referenced.
+/// Each `<li>` contains the footnote definition content with a back-reference link.
+/// Numbering follows first-reference order per GFM spec.
+///
+/// This is a stub implementation that renders the `<ol>` wrapper.
+/// The full implementation (Task 3) populates `<li>` items with footnote content
+/// and back-reference links.
+pub(crate) fn walk_footnote_section(
+    ctx: &WalkContext,
+    footnote_order: &[String],
+) -> Node {
+    let mut li_nodes = Vec::new();
+    for (_idx, id) in footnote_order.iter().enumerate() {
+        // Find the footnote definition content.
+        let content = ctx
+            .footnotes
+            .iter()
+            .find(|(fid, _)| fid == id)
+            .map(|(_, children)| super::walk_nodes(ctx, children));
+        let content = content.unwrap_or_else(Nodes::new);
+        // Build back-reference link: <a href="#fnref-{id}">.
+        let back_ref_href = format!("#fnref-{}", id);
+        let back_ref_attrs = with_attributes(vec![create_attribute("href", &back_ref_href)]);
+        let back_ref_text = text_node(&id);
+        let back_ref = Node::Element(Box::new(normal_element_with_attrs(
+            "a", back_ref_attrs, Nodes::from(vec![back_ref_text]),
+        )));
+        // Wrap content in <p> if not already a paragraph-like node.
+        let p_content = if content.len() == 1
+            && matches!(&content[0], Node::Element(e) if e.name().string_name().as_deref() == Some("p"))
+        {
+            content
+        } else {
+            Nodes::from(vec![html_element("p", content)])
+        };
+        // Build <li id="fn-{id}"> content + back_ref </li>.
+        let mut li_children = p_content.into_vec();
+        li_children.push(back_ref);
+        let li_attrs = with_attributes(vec![create_attribute("id", &format!("fn-{}", id))]);
+        let li = Node::Element(Box::new(normal_element_with_attrs(
+            "li", li_attrs, Nodes::from(li_children),
+        )));
+        li_nodes.push(li);
+    }
+    html_element("ol", Nodes::from(li_nodes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,7 @@
 //! through the same code generation pipeline as handwritten templates.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use proc_macro2::Span;
 use syn::Path;
@@ -33,11 +34,23 @@ pub struct WalkContext<'a> {
     /// `compile_mdx!` file-path argument so diagnostics point to the
     /// invocation site rather than `call_site()`.
     pub span: Span,
+    /// Link/image definition registry: normalized identifier → (url, title).
+    /// Built during the pre-scan pass so that `LinkReference` and
+    /// `ImageReference` nodes can be resolved during the main walk.
+    pub definitions: HashMap<String, (String, Option<String>)>,
+    /// Footnote definitions collected during the pre-scan pass:
+    /// (identifier, children nodes).
+    pub footnotes: Vec<(String, Vec<markdown::mdast::Node>)>,
+    /// Footnote identifiers in first-reference order (GFM spec).
+    /// Populated during the main walk; used to number footnotes
+    /// in the document-end section.
+    pub footnote_order: RefCell<Vec<String>>,
 }
 
 impl<'a> WalkContext<'a> {
     /// Create a new walk context with the given component registry,
-    /// override registry, and span.
+    /// override registry, and span. Definition and footnote maps are
+    /// initialized empty.
     #[must_use]
     pub fn new(
         components: &'a [(String, Path)],
@@ -49,6 +62,30 @@ impl<'a> WalkContext<'a> {
             overrides,
             errors: RefCell::new(Vec::new()),
             span,
+            definitions: HashMap::new(),
+            footnotes: Vec::new(),
+            footnote_order: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Create a walk context with pre-populated definition and footnote maps.
+    /// Used by `mdx_to_view` after the pre-scan pass.
+    #[must_use]
+    pub fn with_maps(
+        components: &'a [(String, Path)],
+        overrides: &'a [(&'static str, Path)],
+        span: Span,
+        definitions: HashMap<String, (String, Option<String>)>,
+        footnotes: Vec<(String, Vec<markdown::mdast::Node>)>,
+    ) -> Self {
+        Self {
+            components,
+            overrides,
+            errors: RefCell::new(Vec::new()),
+            span,
+            definitions,
+            footnotes,
+            footnote_order: RefCell::new(Vec::new()),
         }
     }
 
@@ -69,6 +106,40 @@ impl Default for WalkContext<'_> {
     fn default() -> Self {
         Self::empty()
     }
+}
+
+/// Collects link/image definitions and footnote definitions from the root.
+///
+/// Iterates root children looking for `Definition` and `FootnoteDefinition`
+/// nodes. Definition identifiers are normalized to lowercase per CommonMark
+/// case-folding rules. Returns a tuple of `(definitions, footnotes)` where
+/// definitions maps the normalized identifier to `(url, title)` and footnotes
+/// stores `(identifier, children)` pairs.
+#[must_use]
+pub fn collect_definitions(
+    root: &markdown::mdast::Root,
+) -> (
+    HashMap<String, (String, Option<String>)>,
+    Vec<(String, Vec<markdown::mdast::Node>)>,
+) {
+    let mut definitions = HashMap::new();
+    let mut footnotes = Vec::new();
+    for node in &root.children {
+        match node {
+            markdown::mdast::Node::Definition(d) => {
+                let id = d.identifier.trim().to_lowercase();
+                definitions.insert(
+                    id,
+                    (d.url.clone(), d.title.clone()),
+                );
+            }
+            markdown::mdast::Node::FootnoteDefinition(f) => {
+                footnotes.push((f.identifier.clone(), f.children.clone()));
+            }
+            _ => {}
+        }
+    }
+    (definitions, footnotes)
 }
 
 /// Format of the frontmatter extracted from an MDX document.
@@ -109,6 +180,9 @@ pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<(String, Fron
 /// enabled, then walks the resulting mdast into a `View` value ready for
 /// token emission via `ToTokens`.
 ///
+/// Two-pass walk: first collects `Definition` and `FootnoteDefinition` nodes
+/// from the root, then walks the remaining nodes with the populated maps.
+///
 /// # Errors
 ///
 /// Returns `Err(markdown::message::Message)` if the markdown parser fails.
@@ -120,7 +194,26 @@ pub fn mdx_to_view(
     let root = markdown::to_mdast(mdx_content, &options)?;
 
     let nodes = match root {
-        markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children),
+        markdown::mdast::Node::Root(r) => {
+            // Pass 1: collect definitions and footnote definitions.
+            let (definitions, footnotes) = collect_definitions(&r);
+            // Build context with pre-populated maps.
+            let ctx_with_maps = WalkContext::with_maps(
+                ctx.components,
+                ctx.overrides,
+                ctx.span,
+                definitions,
+                footnotes,
+            );
+            // Pass 2: walk the root children.
+            let mut walked = walk_nodes(&ctx_with_maps, &r.children).into_vec();
+            // Post-walk: append footnote section if any footnotes were referenced.
+            let footnote_order = ctx_with_maps.footnote_order.borrow().clone();
+            if !footnote_order.is_empty() {
+                walked.push(node::walk_footnote_section(&ctx_with_maps, &footnote_order));
+            }
+            walked.into()
+        }
         _ => Nodes::new(),
     };
     Ok(View { cx: None, nodes })
@@ -320,6 +413,57 @@ mod tests {
         );
     }
 
+    // ---- Two-pass walk infrastructure tests (collect_definitions) ----
+
+    #[test]
+    fn collect_definitions_finds_link_definitions() {
+        let root = parse_to_root("[example]: https://example.com \"Example\"\n\nText");
+        let markdown::mdast::Node::Root(r) = root else {
+            panic!("expected root");
+        };
+        let (definitions, _) = collect_definitions(&r);
+        assert_eq!(definitions.len(), 1, "should find one definition");
+        let entry = definitions.get("example").expect("should have 'example' key");
+        assert_eq!(entry.0, "https://example.com", "should store URL");
+        assert_eq!(entry.1, Some("Example".to_string()), "should store title");
+    }
+
+    #[test]
+    fn collect_definitions_normalizes_identifier_case() {
+        let root = parse_to_root("[MyLabel]: https://example.com\n\nText");
+        let markdown::mdast::Node::Root(r) = root else {
+            panic!("expected root");
+        };
+        let (definitions, _) = collect_definitions(&r);
+        assert!(
+            definitions.contains_key("mylabel"),
+            "should normalize identifier to lowercase"
+        );
+    }
+
+    #[test]
+    fn collect_definitions_finds_footnote_definitions() {
+        let root = parse_to_root("[^1]: This is a footnote\n\nText[^1]");
+        let markdown::mdast::Node::Root(r) = root else {
+            panic!("expected root");
+        };
+        let (_, footnotes) = collect_definitions(&r);
+        assert_eq!(footnotes.len(), 1, "should find one footnote definition");
+        assert_eq!(footnotes[0].0, "1", "footnote identifier should be '1'");
+        assert!(!footnotes[0].1.is_empty(), "footnote should have children");
+    }
+
+    #[test]
+    fn collect_definitions_empty_when_no_defs() {
+        let root = parse_to_root("# Just a heading");
+        let markdown::mdast::Node::Root(r) = root else {
+            panic!("expected root");
+        };
+        let (definitions, footnotes) = collect_definitions(&r);
+        assert!(definitions.is_empty(), "should have no definitions");
+        assert!(footnotes.is_empty(), "should have no footnotes");
+    }
+
     // ---- mdx_to_view entry point tests ----
 
     #[test]
@@ -328,6 +472,22 @@ mod tests {
         let view = mdx_to_view(&ctx, "# Test").expect("should parse valid markdown");
         assert!(view.cx.is_none());
         assert!(!view.nodes.is_empty());
+    }
+
+    // ---- WalkContext fields test ----
+
+    #[test]
+    fn walk_context_has_definitions_and_footnotes() {
+        let ctx = WalkContext::with_maps(
+            &[],
+            &[],
+            proc_macro2::Span::call_site(),
+            std::collections::HashMap::new(),
+            Vec::new(),
+        );
+        assert!(ctx.definitions.is_empty());
+        assert!(ctx.footnotes.is_empty());
+        assert!(ctx.footnote_order.borrow().is_empty());
     }
 
     #[test]
