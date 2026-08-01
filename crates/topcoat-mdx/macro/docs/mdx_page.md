@@ -80,7 +80,7 @@ mdx_page!(
 );
 ```
 
-Alternatively, use `mdx_components!{...}` or rely on the global inventory when the `discover` feature is enabled. See [`compile_mdx!`][] for the different registry forms.
+Alternatively, pass an `mdx_components!{...}` invocation in place of the braced block. See [`compile_mdx!`][] for the different registry forms.
 
 ## Overrides
 

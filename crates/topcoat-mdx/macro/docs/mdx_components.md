@@ -1,68 +1,41 @@
-The `mdx_components!` macro produces a component registry mapping MDX tag names to Rust component paths. It is a `macro_rules!` that emits a braced block consumed by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`. When the `discover` feature is enabled, it also submits each mapping to a global inventory.
-
-```rust
-use topcoat::mdx::mdx_components;
-
-let registry = mdx_components! {
-    Callout => crate::components::callout,
-    Divider => crate::components::divider,
-};
-```
-
-# Syntax
+The `mdx_components!` macro produces a component registry mapping MDX tag names to Rust component paths. It is a `macro_rules!` whose braced block is consumed by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`.
 
 ```text
-mdx_components! { TagName => path::to::component, }
-```
-
-Each entry maps an identifier to a Rust component path. The identifier becomes the tag name recognized in `.mdx` files.
-
-## Trailing commas
-
-Trailing commas are supported:
-
-```rust
-use topcoat::mdx::mdx_components;
-
-let registry = mdx_components! {
+mdx_components! {
     Callout => crate::components::callout,
     Divider => crate::components::divider,
-};
+}
 ```
 
-## Qualified paths
+Each entry maps an identifier to a Rust component path. The identifier becomes the tag name recognized in `.mdx` files. Trailing commas are supported, and component paths can be fully qualified:
 
-Component paths can be fully qualified:
-
-```rust
-use topcoat::mdx::mdx_components;
-
-let registry = mdx_components! {
+```text
+mdx_components! {
     Callout => crate::ui::blog::callout::Callout,
     Admonition => super::components::Admonition,
-};
+}
 ```
 
-# Usage with `compile_mdx!`
+# Usage
 
-Pass the macro invocation directly as the first argument to `compile_mdx!`:
+The registry is only meaningful as an argument to one of the MDX macros, which read it as tokens at compile time. Pass the invocation directly as the first argument:
 
 ```rust,ignore
-use topcoat::{mdx::{compile_mdx, mdx_components}, router::page, view::view};
+use topcoat::{mdx::{compile_mdx, mdx_components}, router::page};
 
 #[page("/blog/post")]
 async fn post_page() -> topcoat::Result {
-    view! {
-        compile_mdx!(
-            mdx_components! {
-                Callout => components::callout,
-                Divider => components::divider,
-            },
-            "content/post.mdx"
-        )
-    }
+    compile_mdx!(
+        mdx_components! {
+            Callout => components::callout,
+            Divider => components::divider,
+        },
+        "content/post.mdx"
+    )
 }
 ```
+
+Because the tokens are consumed by the enclosing macro, `mdx_components!` is never expanded on its own and cannot be bound to a variable. Each MDX file declares the components it uses, so a page only resolves the tags it names.
 
 # Component Props
 
@@ -86,21 +59,4 @@ Self-closing component tags are supported:
 
 This renders the `divider` component with no children.
 
-# Inventory Discovery
-
-When the `discover` feature is enabled on the `topcoat-mdx` crate, `mdx_components!` automatically submits each mapping to a global inventory. The `mdx_pages!` macro discovers these registrations when compiling pages from a directory scan, so you do not need to pass `components = {...}` to every page.
-
-Enable discovery in your `Cargo.toml`:
-
-```toml
-topcoat = { version = "0.5.0", features = ["mdx-discover"] }
-```
-
-After enabling, register your components once and use `Router::builder().discover()` to pick them up along with pages registered by `mdx_page!` and `mdx_pages!`.
-
-# Type
-
-`mdx_components!` is a `macro_rules!` macro, not a procedural macro. The braced block it produces is valid Rust syntax parsed by the procedural macro that consumes it. The `MdxComponentMapping` type holds the inventory entries when discovery is active.
-
 [`compile_mdx!`]: macro.compile_mdx.html
-[`MdxComponentMapping`]: struct.MdxComponentMapping.html

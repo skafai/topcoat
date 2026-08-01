@@ -67,7 +67,7 @@ members = [
     "examples/mdx/components",
     "examples/mdx/blog",
     "examples/mdx/docs-site",
-    "examples/mdx/discover",
+    "examples/mdx/mdx-pages",
 
     "benchmarks/topcoat",
 ]
