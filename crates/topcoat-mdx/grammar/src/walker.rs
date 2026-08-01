@@ -404,6 +404,8 @@ pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, writer: &
 
 // Re-export jsx functions that are part of the public API used by external consumers.
 pub use jsx::coerce_attr_value;
+// Re-export excerpt split detection for the macro crate's two-writer approach.
+pub use helpers::find_excerpt_split;
 
 #[cfg(test)]
 mod tests {

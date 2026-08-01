@@ -217,6 +217,49 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
     }
 }
 
+/// Finds the split index in a slice of root-level mdast nodes where the
+/// `<!-- more -->` excerpt marker appears.
+///
+/// Scans `children` sequentially. For each child:
+/// - If it is a `Text` node whose value contains `<!-- more -->`, the split
+///   is immediately after that node.
+/// - If it is a `Paragraph`, inspects its inline children for a `Text` node
+///   containing `<!-- more -->`. The split is after the paragraph.
+/// - Otherwise, the node is part of the excerpt.
+///
+/// Returns `Some(idx)` where `children[..idx]` is the excerpt portion and
+/// `children[idx..]` is the body portion. Returns `None` if no marker is found.
+pub fn find_excerpt_split(children: &[markdown::mdast::Node]) -> Option<usize> {
+    for (idx, node) in children.iter().enumerate() {
+        match node {
+            markdown::mdast::Node::Text(t) => {
+                if t.value.contains("<!-- more -->") {
+                    return Some(idx + 1);
+                }
+            }
+            markdown::mdast::Node::Paragraph(p) => {
+                let text_content: String = collect_paragraph_text(&p.children);
+                if text_content.contains("<!-- more -->") {
+                    return Some(idx + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Collects text content from paragraph inline children for excerpt scanning.
+fn collect_paragraph_text(nodes: &[markdown::mdast::Node]) -> String {
+    let mut result = String::new();
+    for node in nodes {
+        if let markdown::mdast::Node::Text(t) = node {
+            result.push_str(&t.value);
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +393,77 @@ mod tests {
         assert!(meta.lang.is_none());
         assert!(meta.lines.is_none());
         assert!(meta.title.is_none());
+    }
+
+    // ---- find_excerpt_split tests ----
+
+    fn make_text_node(value: &str) -> markdown::mdast::Node {
+        markdown::mdast::Node::Text(markdown::mdast::Text {
+            position: None,
+            value: value.to_string(),
+        })
+    }
+
+    fn make_paragraph(children: Vec<markdown::mdast::Node>) -> markdown::mdast::Node {
+        markdown::mdast::Node::Paragraph(markdown::mdast::Paragraph {
+            position: None,
+            children,
+        })
+    }
+
+    #[test]
+    fn excerpt_split_found_as_text_node() {
+        let children = vec![
+            make_text_node("Excerpt text"),
+            make_text_node("<!-- more -->"),
+            make_text_node("Body text"),
+        ];
+        let split = super::find_excerpt_split(&children);
+        assert_eq!(split, Some(2), "should split after the marker text node");
+    }
+
+    #[test]
+    fn excerpt_split_found_in_paragraph() {
+        let children = vec![
+            make_paragraph(vec![make_text_node("Excerpt paragraph")]),
+            make_paragraph(vec![
+                make_text_node("Start "),
+                make_text_node("<!-- more -->"),
+                make_text_node(" End"),
+            ]),
+            make_paragraph(vec![make_text_node("Body paragraph")]),
+        ];
+        let split = super::find_excerpt_split(&children);
+        assert_eq!(split, Some(2), "should split after the paragraph containing the marker");
+    }
+
+    #[test]
+    fn excerpt_split_not_found() {
+        let children = vec![
+            make_text_node("No marker here"),
+            make_paragraph(vec![make_text_node("Also no marker")]),
+        ];
+        let split = super::find_excerpt_split(&children);
+        assert!(split.is_none(), "should return None when no marker found");
+    }
+
+    #[test]
+    fn excerpt_split_at_end() {
+        let children = vec![
+            make_text_node("Excerpt"),
+            make_text_node("<!-- more -->"),
+        ];
+        let split = super::find_excerpt_split(&children);
+        assert_eq!(split, Some(2), "should split after last node when marker is at end");
+    }
+
+    #[test]
+    fn excerpt_split_at_start() {
+        let children = vec![
+            make_text_node("<!-- more -->"),
+            make_text_node("Body only"),
+        ];
+        let split = super::find_excerpt_split(&children);
+        assert_eq!(split, Some(1), "should split after first node when marker is at start");
     }
 }

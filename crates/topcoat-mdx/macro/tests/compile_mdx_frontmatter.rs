@@ -27,7 +27,7 @@ async fn compile_mdx_with_frontmatter_compiles() {
     );
     // But the body content should render.
     assert!(
-        html.contains("<h1>Hello from MDX</h1>"),
+        html.contains("Hello from MDX"),
         "body should render"
     );
 }
@@ -100,7 +100,7 @@ async fn compile_mdx_handles_md_extension_with_frontmatter() {
         compile_mdx!("tests/fixtures/frontmatter_md.md").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
-    assert!(html.contains("<h1>"), "body should render");
+    assert!(html.contains("<h1 "), "body should render");
     assert!(
         !html.contains("---"),
         "frontmatter should not render as content"

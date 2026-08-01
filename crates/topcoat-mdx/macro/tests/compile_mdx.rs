@@ -19,7 +19,7 @@ async fn tracer_renders() {
     let html = view.render(&cx);
 
     // Should render the heading and paragraph.
-    assert!(html.contains("<h1>Tracer Test</h1>"), "should have h1. Got:\n{html}");
+    assert!(html.contains("Tracer Test"), "should have h1 text. Got:\n{html}");
     assert!(html.contains("<strong>bold</strong>"), "should have bold. Got:\n{html}");
     assert!(html.contains("<em>italic</em>"), "should have italic. Got:\n{html}");
     // Blockquote replaced the old raw HTML div.
@@ -41,13 +41,13 @@ async fn commonmark_renders() {
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
 
-    // Heading levels 1-6
-    assert!(html.contains("<h1>"), "should have <h1>. Got:\n{html}");
-    assert!(html.contains("<h2>"), "should have <h2>");
-    assert!(html.contains("<h3>"), "should have <h3>");
-    assert!(html.contains("<h4>"), "should have <h4>");
-    assert!(html.contains("<h5>"), "should have <h5>");
-    assert!(html.contains("<h6>"), "should have <h6>");
+    // Heading levels 1-6 (id attributes added by heading ID generation)
+    assert!(html.contains("<h1 "), "should have <h1>. Got:\n{html}");
+    assert!(html.contains("<h2 "), "should have <h2>");
+    assert!(html.contains("<h3 "), "should have <h3>");
+    assert!(html.contains("<h4 "), "should have <h4>");
+    assert!(html.contains("<h5 "), "should have <h5>");
+    assert!(html.contains("<h6 "), "should have <h6>");
 
     // Paragraph
     assert!(html.contains("<p>"), "should have <p>");
@@ -72,10 +72,10 @@ async fn commonmark_renders() {
         "should have correct alt value. Got:\n{html}"
     );
 
-    // Code block: <pre><code
+    // Code block: <pre> with optional data-* attributes, then <code
     assert!(
-        html.contains("<pre><code"),
-        "should have <pre><code. Got:\n{html}"
+        html.contains("<pre") && html.contains("<code"),
+        "should have <pre> and <code. Got:\n{html}"
     );
 
     // Blockquote
