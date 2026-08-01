@@ -79,6 +79,28 @@ mod index_test {
             .expect("plain-markdown entry should exist");
         assert!(plain.title.is_none());
     }
+
+    #[test]
+    fn mdx_index_nested_path() {
+        let index = mdx_index_tests_fixtures_pages();
+        // nested/deep-page.mdx should derive path with subdirectory
+        let deep = index
+            .iter()
+            .find(|e| e.slug == "deep-page")
+            .expect("deep-page entry should exist");
+        assert_eq!(deep.path, "/index-test/nested/deep-page");
+    }
+
+    #[test]
+    fn mdx_index_flat_path() {
+        let index = mdx_index_tests_fixtures_pages();
+        // Top-level hello-world.mdx should have prefix + slug as path
+        let hello = index
+            .iter()
+            .find(|e| e.slug == "hello-world")
+            .expect("hello-world entry should exist");
+        assert_eq!(hello.path, "/index-test/hello-world");
+    }
 }
 
 // ---- Index entry type test ----
@@ -93,12 +115,14 @@ mod type_test {
         // Verify MdxIndexEntry has the expected fields.
         let entry = MdxIndexEntry {
             slug: "test",
+            path: "/blog/test",
             title: Some("Test Title"),
             date: Some("2024-01-01"),
             excerpt: Some("Test excerpt"),
             tags: TEST_TAGS,
         };
         assert_eq!(entry.slug, "test");
+        assert_eq!(entry.path, "/blog/test");
         assert_eq!(entry.title, Some("Test Title"));
         assert_eq!(entry.date, Some("2024-01-01"));
         assert_eq!(entry.excerpt, Some("Test excerpt"));
@@ -110,6 +134,7 @@ mod type_test {
         static EMPTY_TAGS: &[&'static str] = &[];
         let entry = MdxIndexEntry {
             slug: "minimal",
+            path: "/blog/minimal",
             title: None,
             date: None,
             excerpt: None,

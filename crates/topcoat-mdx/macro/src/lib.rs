@@ -386,7 +386,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         .collect();
 
     // Build index entries from scanned pages.
-    let index_entries = build_index(&page_entries, span);
+    let index_entries = build_index(&canonical_scan_dir, &page_entries, prefix.as_deref(), span);
 
     // Derive a stable identifier from the directory path for the index name.
     let index_suffix = dir_str

@@ -112,8 +112,14 @@ pub(crate) fn scan_directory(
 /// Builds index entries from scanned pages.
 ///
 /// For each page, extracts title/date/tags/excerpt from frontmatter
-/// using generic `serde_value::Value` parsing.
-pub(crate) fn build_index(entries: &[MdxPageEntry], _span: Span) -> Vec<proc_macro2::TokenStream> {
+/// using generic `serde_value::Value` parsing, and derives the full
+/// route path from the scan directory, file location, and optional prefix.
+pub(crate) fn build_index(
+    scan_dir: &Path,
+    entries: &[MdxPageEntry],
+    prefix: Option<&str>,
+    _span: Span,
+) -> Vec<proc_macro2::TokenStream> {
     let mut index_items = Vec::new();
 
     for entry in entries {
@@ -141,9 +147,13 @@ pub(crate) fn build_index(entries: &[MdxPageEntry], _span: Span) -> Vec<proc_mac
             .and_then(|s| s.to_str())
             .unwrap_or("page")
             .to_kebab_case();
-        // Intentional leak: slugs are small and the index array requires
+        // Intentional leak: slugs/paths are small and the index array requires
         // &'static str. Leaking avoids complex lifetime management.
         let slug_str: &'static str = Box::leak(slug.into_boxed_str());
+
+        // Derive full route path (prefix + relative subdirs + kebab stem).
+        let route_path_str = derive_route_path(scan_dir, &entry.file_path, prefix);
+        let path_str: &'static str = Box::leak(route_path_str.into_boxed_str());
 
         // Extract known fields from frontmatter using generic deserialization.
         let (title_expr, date_expr, excerpt_expr, tags_expr) = if let Some((fm_content, format)) =
@@ -186,6 +196,7 @@ pub(crate) fn build_index(entries: &[MdxPageEntry], _span: Span) -> Vec<proc_mac
         index_items.push(quote! {
             #topcoat_mdx::MdxIndexEntry {
                 slug: #slug_str,
+                path: #path_str,
                 title: #title_expr,
                 date: #date_expr,
                 excerpt: #excerpt_expr,

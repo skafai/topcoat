@@ -27,6 +27,9 @@ pub struct MdxComponentMapping {
 pub struct MdxIndexEntry {
     /// The kebab-cased route slug derived from the file path stem.
     pub slug: &'static str,
+    /// The full route path including any prefix and subdirectory structure
+    /// (e.g. `"/blog/updates/roadmap"`). Use this for generating links.
+    pub path: &'static str,
     /// The `title` field from frontmatter, if present.
     pub title: Option<&'static str>,
     /// The `date` field from frontmatter, if present.
