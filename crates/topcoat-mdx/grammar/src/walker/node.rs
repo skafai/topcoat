@@ -314,10 +314,15 @@ pub(crate) fn walk_link_reference(
         "unknown reference link target: '{}'",
         link_ref.identifier
     ));
-    // Render link text as plain inline content.
-    super::walk_nodes(ctx, &link_ref.children).into_vec().into_iter().next().unwrap_or_else(|| {
+    // Render all link children as plain inline content, wrapped in a <span>
+    // to preserve them (CR-02). Falls back to the identifier text if there
+    // are no children.
+    let walked = super::walk_nodes(ctx, &link_ref.children);
+    if walked.is_empty() {
         text_node(&link_ref.identifier)
-    })
+    } else {
+        html_element("span", walked)
+    }
 }
 
 /// Walks an image reference node: `![alt][ref]` resolved from definitions map.
