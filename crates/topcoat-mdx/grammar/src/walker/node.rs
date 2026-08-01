@@ -1066,6 +1066,65 @@ mod tests {
         );
     }
 
+    // ---- Heading ID tests ----
+
+    /// Find the value of a named attribute on an element.
+    fn find_attr_value(element: &ViewElement, name: &str) -> Option<String> {
+        for item in &element.attributes().items {
+            if let topcoat_view_grammar::attributes::AttributeNode::Attribute(attr) = item {
+                if let topcoat_view_grammar::attributes::AttributeKey::Ident(id) = &attr.key {
+                    if id.first.to_string() == name {
+                        if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) = &attr.value {
+                            return Some(lit.value());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn heading_id_simple() {
+        // "# Hello" should produce <h1 id="hello">
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "# Hello").expect("should parse");
+        assert!(!view.nodes.is_empty());
+        // Find the h1 element
+        let h1 = view.nodes.iter().find_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("h1") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        });
+        assert!(h1.is_some(), "should have h1 element");
+        let h1 = h1.unwrap();
+        let id_value = find_attr_value(h1, "id");
+        assert_eq!(id_value, Some("hello".to_string()), "heading should have id=\"hello\"");
+    }
+
+    #[test]
+    fn heading_id_duplicate() {
+        // Two "# Hello" headings should produce id="hello" and id="hello-1"
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "# Hello\n\n# Hello").expect("should parse");
+        let h1s: Vec<_> = view.nodes.iter().filter_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("h1") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        }).collect();
+        assert_eq!(h1s.len(), 2, "should have two h1 elements");
+        let id1 = find_attr_value(h1s[0], "id");
+        let id2 = find_attr_value(h1s[1], "id");
+        assert_eq!(id1, Some("hello".to_string()), "first heading should have id=\"hello\"");
+        assert_eq!(id2, Some("hello-1".to_string()), "second heading should have id=\"hello-1\"");
+    }
+
     // ---- Helper for recursive element finding ----
 
     fn find_element_recursive<'a>(element: &'a ViewElement, tag: &str) -> Option<&'a ViewElement> {
