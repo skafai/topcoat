@@ -2,7 +2,7 @@
 
 use topcoat::{context::CxTestBuilder, mdx::compile_mdx};
 
-// ---- Tracer fixture (from Plan 01) ----
+// ---- Tracer fixture ----
 
 #[tokio::test]
 async fn tracer_compiles() {
@@ -13,7 +13,7 @@ async fn tracer_compiles() {
 #[tokio::test]
 async fn tracer_renders() {
     // Verifies the tracer fixture compiles and renders mixed markdown content.
-    // Raw HTML passthrough is disabled (Plan 03.2-01); the fixture uses pure markdown.
+    // Raw HTML passthrough is disabled; the fixture uses pure markdown.
     let view = compile_mdx!("tests/fixtures/tracer.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
@@ -68,13 +68,13 @@ async fn commonmark_renders() {
     assert!(html.contains("<strong>"), "should have <strong>");
     assert!(html.contains("<em>"), "should have <em>");
 
-    // Link with correct href value (WR-05: value-level assertion)
+    // Link with correct href value
     assert!(
         html.contains(r#"href="https://example.com""#),
         "should have correct href value. Got:\n{html}"
     );
 
-    // Image with src and alt attribute values (WR-05: value-level assertion)
+    // Image with src and alt attribute values
     assert!(
         html.contains(r#"src="photo.png""#),
         "should have correct image src value. Got:\n{html}"
@@ -135,7 +135,7 @@ async fn gfm_renders() {
     assert!(html.contains("<th>"), "should have <th>");
     assert!(html.contains("<td>"), "should have <td>");
 
-    // Table alignment values (WR-05: value-level assertions)
+    // Table alignment values
     assert!(
         html.contains("text-align: left"),
         "should have left alignment. Got:\n{html}"
@@ -163,7 +163,7 @@ async fn gfm_renders() {
 }
 
 // ---- Raw HTML fixture ----
-// Raw HTML passthrough is disabled (Plan 03.2-01). These tests verify
+// Raw HTML passthrough is disabled. These tests verify
 // that raw HTML blocks are dropped by the parser rather than passed through.
 
 #[tokio::test]

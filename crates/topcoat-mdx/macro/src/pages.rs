@@ -95,7 +95,7 @@ pub(crate) fn scan_directory(
             continue;
         }
 
-        // Security: verify resolved path stays within manifest directory (T-03-04).
+        // Security: verify resolved path stays within manifest directory.
         let resolved_path = file_path
             .canonicalize()
             .unwrap_or_else(|_| file_path.clone());

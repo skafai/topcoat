@@ -94,7 +94,7 @@ pub(crate) fn parse_and_walk_mdx(
     // children into a separate builder and body children into the main
     // builder. Excerpt children are walked through `walk_excerpt_to_writer`
     // which strips `<!-- more -->` from text content so the marker does not
-    // appear as visible text in rendered output (CR-01).
+    // appear as visible text in rendered output.
     let excerpt_tokens = if let Some(split_idx) = excerpt_split {
         let mut excerpt_builder = ViewBuilder::new();
         for child in &post_fm_children[..split_idx] {
@@ -149,7 +149,7 @@ pub(crate) fn compile_mdx_file(
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
     let resolved = Path::new(&manifest_dir).join(path_str);
 
-    // Security: verify resolved path stays within manifest directory (T-01-01).
+    // Security: verify resolved path stays within manifest directory.
     let canonical = resolved.canonicalize().map_err(|e| {
         syn::Error::new(
             span,
@@ -170,7 +170,7 @@ pub(crate) fn compile_mdx_file(
     if !canonical.starts_with(&canonical_manifest) {
         return Err(syn::Error::new(
             span,
-            format!("compile_mdx! path '{path_str}' escapes CARGO_MANIFEST_DIR (T-01-01)"),
+            format!("compile_mdx! path '{path_str}' escapes CARGO_MANIFEST_DIR"),
         ));
     }
 
