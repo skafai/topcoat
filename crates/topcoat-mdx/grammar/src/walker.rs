@@ -140,11 +140,6 @@ pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> N
 }
 
 /// Walks a single mdast node into zero or more view `Node`s.
-///
-/// # Panics
-/// Panics if an override is registered for a tag (verified via `has_override`)
-/// but `try_apply_override` returns `None` — this should not happen when the
-/// `has_override` guard is used, as both check the same `ctx.overrides` slice.
 pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
         markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
@@ -154,9 +149,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
             let children = walk_nodes(ctx, &h.children);
-            if jsx::has_override(ctx, &tag) {
-                // try_apply_override will succeed here since we checked has_override first.
-                vec![jsx::try_apply_override(ctx, &tag, &topcoat_view_grammar::attributes::Attributes::default(), children).unwrap()]
+            if let Some(node) = jsx::try_apply_override(ctx, &tag, &topcoat_view_grammar::attributes::Attributes::default(), children) {
+                vec![node]
             } else {
                 vec![helpers::html_element(&tag, children)]
             }
@@ -177,8 +171,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![helpers::html_element("blockquote", walk_nodes(ctx, &b.children))]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
-            if jsx::has_override(ctx, "hr") {
-                vec![jsx::try_apply_override(ctx, "hr", &topcoat_view_grammar::attributes::Attributes::default(), Nodes::new()).unwrap()]
+            if let Some(node) = jsx::try_apply_override(ctx, "hr", &topcoat_view_grammar::attributes::Attributes::default(), Nodes::new()) {
+                vec![node]
             } else {
                 vec![Node::Element(Box::new(helpers::void_element("hr")))]
             }
