@@ -4,14 +4,12 @@
 //! lists, tables, strikethrough, etc. They construct `Node` values using
 //! the helpers in `helpers.rs` and check for overrides via `jsx.rs`.
 
-use topcoat_view_grammar::{
-    attributes::Attributes,
-    view::{Node, Nodes},
-};
+use topcoat_view_grammar::view::{Node, Nodes};
 
 use super::helpers::{
-    create_attribute, create_attribute_bool, html_element, normal_element_with_attrs,
-    self_closing_element, text_node, void_element_with_attrs, with_attributes,
+    create_attribute, create_attribute_bool, create_attribute_data, html_element,
+    normal_element_with_attrs, parse_code_meta, self_closing_element, text_node,
+    void_element_with_attrs, with_attributes,
 };
 use super::jsx::{build_override_component, try_find_override_path};
 use super::WalkContext;
@@ -82,20 +80,49 @@ pub(crate) fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> N
 }
 
 /// Walks a fenced code block: `<pre><code class="language-{lang}">...</code></pre>`.
+///
+/// Parses the code block's meta string (language, line ranges, title, emphasis)
+/// and attaches them as `data-*` attributes on the `<pre>` element for
+/// downstream syntax highlighting components (Phase C).
 pub(crate) fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -> Node {
-    let mut attrs = Vec::new();
-    if let Some(ref lang) = code.lang {
-        attrs.push(create_attribute("class", &format!("language-{lang}")));
+    let meta = parse_code_meta(code);
+
+    // data-* attributes on <pre> from meta string.
+    let mut pre_attrs = Vec::new();
+    if let Some(ref lang) = meta.lang {
+        pre_attrs.push(create_attribute_data("data-lang", lang));
     }
-    let code_attrs = with_attributes(attrs);
+    if let Some(ref lines) = meta.lines {
+        pre_attrs.push(create_attribute_data("data-lines", lines));
+    }
+    if let Some(ref title) = meta.title {
+        pre_attrs.push(create_attribute_data("data-title", title));
+    }
+    if !meta.emphasis.is_empty() {
+        pre_attrs.push(create_attribute_data(
+            "data-emphasis",
+            &meta.emphasis.join(","),
+        ));
+    }
+
+    // class="language-{lang}" on <code> for backward compatibility.
+    let mut code_attrs = Vec::new();
+    if let Some(ref lang) = meta.lang {
+        code_attrs.push(create_attribute("class", &format!("language-{lang}")));
+    }
+    let code_attrs = with_attributes(code_attrs);
     let code_children = Nodes::from(vec![text_node(&code.value)]);
     let code_el = normal_element_with_attrs("code", code_attrs, code_children);
     let pre_children = Nodes::from(vec![Node::Element(Box::new(code_el))]);
+    let pre_attributes = with_attributes(pre_attrs);
+
     // Check for override at the <pre> level (outermost element).
     if let Some(path) = try_find_override_path(ctx, "pre") {
-        return build_override_component(path, &Attributes::default(), pre_children, ctx.span);
+        return build_override_component(path, &pre_attributes, pre_children, ctx.span);
     }
-    html_element("pre", pre_children)
+    Node::Element(Box::new(normal_element_with_attrs(
+        "pre", pre_attributes, pre_children,
+    )))
 }
 
 /// Walks a list: `<ul>` or `<ol>` with `<li>` children.
@@ -1066,17 +1093,115 @@ mod tests {
         );
     }
 
+    // ---- Code block meta string tests ----
+
+    #[test]
+    fn code_meta_emits_data_attributes() {
+        // ```rust {1,3} title="file.rs" should emit data-lang, data-lines, data-title on <pre>
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "```rust {1,3} title=\"file.rs\"\nfn main() {}\n```").expect("should parse");
+        assert!(!view.nodes.is_empty());
+        let pre = view.nodes.iter().find_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("pre") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        });
+        assert!(pre.is_some(), "should have pre element");
+        let pre = pre.unwrap();
+        let data_lang = find_attr_value(pre, "data-lang");
+        let data_lines = find_attr_value(pre, "data-lines");
+        let data_title = find_attr_value(pre, "data-title");
+        assert_eq!(data_lang, Some("rust".to_string()), "should have data-lang=\"rust\"");
+        assert_eq!(data_lines, Some("1,3".to_string()), "should have data-lines=\"1,3\"");
+        assert_eq!(data_title, Some("file.rs".to_string()), "should have data-title=\"file.rs\"");
+    }
+
+    #[test]
+    fn code_meta_language_only() {
+        // ```python should emit only data-lang
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "```python\nprint()\n```").expect("should parse");
+        let pre = view.nodes.iter().find_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("pre") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        });
+        assert!(pre.is_some(), "should have pre element");
+        let pre = pre.unwrap();
+        let data_lang = find_attr_value(pre, "data-lang");
+        assert_eq!(data_lang, Some("python".to_string()));
+    }
+
+    #[test]
+    fn code_meta_no_lang_no_attrs() {
+        // ``` (no language) should emit no data-* attributes
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "```\nno lang\n```").expect("should parse");
+        let pre = view.nodes.iter().find_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("pre") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        });
+        assert!(pre.is_some(), "should have pre element");
+        let pre = pre.unwrap();
+        let data_lang = find_attr_value(pre, "data-lang");
+        assert!(data_lang.is_none(), "should have no data-lang when no language");
+    }
+
+    #[test]
+    fn code_meta_emphasis() {
+        // ```bash /sudo/ should emit data-emphasis on <pre>
+        let ctx = WalkContext::empty();
+        let view = super::super::mdx_to_view(&ctx, "```bash /sudo/\necho hi\n```").expect("should parse");
+        let pre = view.nodes.iter().find_map(|n| {
+            if let Node::Element(e) = n {
+                if e.name().string_name().as_deref() == Some("pre") {
+                    return Some(e.as_ref());
+                }
+            }
+            None
+        });
+        assert!(pre.is_some(), "should have pre element");
+        let pre = pre.unwrap();
+        let data_emphasis = find_attr_value(pre, "data-emphasis");
+        assert_eq!(data_emphasis, Some("sudo".to_string()), "should have data-emphasis=\"sudo\"");
+    }
+
     // ---- Heading ID tests ----
 
     /// Find the value of a named attribute on an element.
     fn find_attr_value(element: &ViewElement, name: &str) -> Option<String> {
         for item in &element.attributes().items {
             if let topcoat_view_grammar::attributes::AttributeNode::Attribute(attr) = item {
-                if let topcoat_view_grammar::attributes::AttributeKey::Ident(id) = &attr.key {
-                    if id.first.to_string() == name {
-                        if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) = &attr.value {
-                            return Some(lit.value());
+                // Build the full attribute key name (handles hyphenated keys like data-lang).
+                let key_name = if let topcoat_view_grammar::attributes::AttributeKey::Ident(id) = &attr.key {
+                    let rest_parts: Vec<String> = id.rest.iter().map(|seg| {
+                        match &seg.part {
+                            topcoat_view_grammar::view::HtmlIdentPart::Ident(i) => i.to_string(),
+                            topcoat_view_grammar::view::HtmlIdentPart::Int(lit) => lit.base10_parse::<u64>().unwrap_or(0).to_string(),
                         }
+                    }).collect();
+                    let full = if rest_parts.is_empty() {
+                        id.first.to_string()
+                    } else {
+                        format!("{}-{}", id.first, rest_parts.join("-"))
+                    };
+                    full
+                } else {
+                    continue;
+                };
+                if key_name == name {
+                    if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) = &attr.value {
+                        return Some(lit.value());
                     }
                 }
             }
