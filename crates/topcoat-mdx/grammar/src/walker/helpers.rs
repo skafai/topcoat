@@ -1,5 +1,6 @@
 //! Helper functions for constructing view! AST elements and attributes.
 
+use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{Ident, LitStr, parse_quote};
 use topcoat_view_grammar::{
@@ -129,9 +130,54 @@ pub(crate) fn with_attributes(attrs: Vec<Attribute>) -> Attributes {
     }
 }
 
+/// Generates a kebab-case slug from heading text for use as an HTML `id` attribute.
+///
+/// Converts the text to lowercase kebab-case using `heck`, collapsing consecutive
+/// dashes and trimming leading/trailing dashes. Empty or punctuation-only input
+/// produces an empty string.
+pub(crate) fn slugify(text: &str) -> String {
+    let slug = text.to_kebab_case().replace("--", "-");
+    let trimmed = slug.trim_matches('-');
+    trimmed.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- slugify tests ----
+
+    #[test]
+    fn slugify_simple_word() {
+        assert_eq!(slugify("Hello"), "hello");
+    }
+
+    #[test]
+    fn slugify_multiple_words() {
+        assert_eq!(slugify("Setup and Configuration"), "setup-and-configuration");
+    }
+
+    #[test]
+    fn slugify_strips_punctuation() {
+        assert_eq!(slugify("Hello, World!"), "hello-world");
+    }
+
+    #[test]
+    fn slugify_with_numbers() {
+        assert_eq!(slugify("Step 1: Start"), "step-1-start");
+    }
+
+    #[test]
+    fn slugify_empty() {
+        assert_eq!(slugify(""), "");
+    }
+
+    #[test]
+    fn slugify_only_punctuation() {
+        assert_eq!(slugify("-_!"), "");
+    }
+
+    // ---- create_attribute tests ----
 
     #[test]
     fn create_attribute_builds_key_value() {

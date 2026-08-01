@@ -44,6 +44,12 @@ pub struct WalkContext<'a> {
     /// Populated during the main walk; used to number footnotes
     /// in the document-end section.
     pub footnote_order: RefCell<Vec<String>>,
+    /// Heading slug counter for duplicate ID handling.
+    /// Maps base slug → occurrence count so that "# Hello" followed
+    /// by another "# Hello" produces ids "hello" and "hello-1".
+    /// Wrapped in RefCell for interior mutability (same pattern as errors,
+    /// footnote_order).
+    pub seen_ids: RefCell<HashMap<String, u32>>,
 }
 
 impl<'a> WalkContext<'a> {
@@ -64,6 +70,7 @@ impl<'a> WalkContext<'a> {
             definitions: HashMap::new(),
             footnotes: Vec::new(),
             footnote_order: RefCell::new(Vec::new()),
+            seen_ids: RefCell::new(HashMap::new()),
         }
     }
 
@@ -85,6 +92,7 @@ impl<'a> WalkContext<'a> {
             definitions,
             footnotes,
             footnote_order: RefCell::new(Vec::new()),
+            seen_ids: RefCell::new(HashMap::new()),
         }
     }
 
@@ -224,6 +232,24 @@ pub fn mdx_to_view(
     Ok(View { cx: None, nodes })
 }
 
+/// Extracts the plain text content from a heading's inline children.
+///
+/// Recursively collects text from `Text`, `Emphasis`, `Strong`, and `InlineCode`
+/// nodes. Used by the Heading arm to generate kebab-case id attributes.
+fn extract_heading_text(nodes: &[markdown::mdast::Node]) -> String {
+    let mut parts = Vec::new();
+    for node in nodes {
+        match node {
+            markdown::mdast::Node::Text(t) => parts.push(t.value.clone()),
+            markdown::mdast::Node::Emphasis(e) => parts.push(extract_heading_text(&e.children)),
+            markdown::mdast::Node::Strong(s) => parts.push(extract_heading_text(&s.children)),
+            markdown::mdast::Node::InlineCode(c) => parts.push(c.value.clone()),
+            _ => {}
+        }
+    }
+    parts.join("")
+}
+
 /// Walks a slice of mdast nodes into a `Nodes` collection.
 pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> Nodes {
     let mut nodes = Vec::new();
@@ -243,10 +269,33 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
             let children = walk_nodes(ctx, &h.children);
-            if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
-                vec![jsx::build_override_component(path, &topcoat_view_grammar::attributes::Attributes::default(), children, ctx.span)]
+            // Generate kebab-case id attribute for URL anchor links.
+            let heading_text = extract_heading_text(&h.children);
+            let base_slug = helpers::slugify(&heading_text);
+            let id_value = if base_slug.is_empty() {
+                tag.clone()
             } else {
-                vec![helpers::html_element(&tag, children)]
+                let count = {
+                    let mut seen = ctx.seen_ids.borrow_mut();
+                    let c = seen.get(&base_slug).copied().unwrap_or(0);
+                    seen.insert(base_slug.clone(), c + 1);
+                    c
+                };
+                if count == 0 {
+                    base_slug
+                } else {
+                    format!("{base_slug}-{count}")
+                }
+            };
+            let mut attrs: Vec<topcoat_view_grammar::attributes::Attribute> = Vec::new();
+            attrs.push(helpers::create_attribute("id", &id_value));
+            let attributes = helpers::with_attributes(attrs);
+            if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
+                vec![jsx::build_override_component(path, &attributes, children, ctx.span)]
+            } else {
+                vec![Node::Element(Box::new(helpers::normal_element_with_attrs(
+                    &tag, attributes, children,
+                )))]
             }
         }
         markdown::mdast::Node::Text(t) => {
