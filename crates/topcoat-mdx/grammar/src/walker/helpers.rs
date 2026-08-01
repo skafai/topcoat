@@ -23,7 +23,16 @@ pub(crate) fn text_node(content: &str) -> Node {
 /// Creates an `Ident` that can be a Rust keyword (e.g., "type", "for").
 /// `syn::parse_str::<Ident>` uses `Ident::parse`, which rejects keywords.
 /// The fallback uses `Ident::new` directly for keyword-safe identifiers.
+///
+/// Panics if `name` is empty or starts with a digit, because those inputs
+/// produce unhelpful panics inside `Ident::new`.
 pub(crate) fn make_ident(name: &str) -> Ident {
+    if name.is_empty() {
+        panic!(
+            "make_ident: identifier cannot be empty \
+            (source: attribute or tag name)"
+        );
+    }
     syn::parse_str(name).unwrap_or_else(|_| Ident::new(name, Span::call_site()))
 }
 
