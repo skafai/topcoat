@@ -1,6 +1,5 @@
 use topcoat::{
     Result,
-    context::Cx,
     router::{Router, RouterBuilderDiscoverExt, layout, page},
     view::{view, View, component},
     mdx::compile_mdx,
@@ -28,9 +27,8 @@ async fn main() {
 // --- Layout ------------------------------------------------------------------
 
 #[layout]
-async fn root_layout(cx: &Cx, slot: Result) -> Result {
+async fn root_layout(slot: Result) -> Result {
     view! {
-        cx =>
         <!DOCTYPE html>
         <html>
             <head>
@@ -54,7 +52,7 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
 // --- Pages -------------------------------------------------------------------
 
 #[page]
-async fn home(_cx: &Cx) -> Result {
+async fn home() -> Result {
     compile_mdx!(
         mdx_components! { Highlight => highlight },
         "pages/home.mdx"
@@ -62,7 +60,7 @@ async fn home(_cx: &Cx) -> Result {
 }
 
 #[page("/features")]
-async fn features(_cx: &Cx) -> Result {
+async fn features() -> Result {
     compile_mdx!(
         mdx_components! { Highlight => highlight },
         "pages/features.mdx"

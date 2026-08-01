@@ -1,6 +1,5 @@
 use topcoat::{
     Result,
-    context::Cx,
     mdx::compile_mdx,
     router::{page, Router},
 };
@@ -24,11 +23,11 @@ fn router() -> Router {
 // --- Pages ------------------------------------------------------------------
 
 #[page("/")]
-async fn home(_cx: &Cx) -> Result {
+async fn home() -> Result {
     compile_mdx!("pages/home.mdx")
 }
 
 #[page("/about")]
-async fn about(_cx: &Cx) -> Result {
+async fn about() -> Result {
     compile_mdx!("pages/about.mdx")
 }
