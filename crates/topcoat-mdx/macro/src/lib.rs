@@ -19,7 +19,7 @@ use syn::{
     punctuated::Punctuated,
 };
 use topcoat_core_grammar::paths::{
-    topcoat_context, topcoat_error, topcoat_inventory, topcoat_router, topcoat_view,
+    topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
 };
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
@@ -1046,6 +1046,9 @@ fn generate_page_registration(
 /// Route paths are derived from the file structure:
 /// - `content/blog/hello-world.mdx` -> `/blog/hello-world`
 /// - `content/blog/nested/post.mdx` -> `/blog/nested/post`
+///
+/// The macro also emits a const index array `MDX_INDEX_<DIR>` and an accessor function
+/// `mdx_index_<dir>()` returning `&[MdxIndexEntry]` for content indexing purposes.
 #[proc_macro]
 pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<MdxPagesInput>(tokens) {
@@ -1124,16 +1127,95 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     let components: Vec<(String, SynPath)> = input.components.unwrap_or_default();
     let overrides: Vec<(&'static str, SynPath)> = input.overrides.unwrap_or_default();
 
-    // Use ignore::Walk to find all .mdx files, respecting .gitignore.
-    let mut results = Vec::new();
-    for entry in ignore::Walk::new(&canonical_scan_dir) {
+    // Scan directory for .mdx and .md files.
+    let page_entries = scan_directory(&canonical_scan_dir, &canonical_manifest, span);
+
+    // Generate route registrations.
+    let route_results: Vec<proc_macro2::TokenStream> = page_entries
+        .iter()
+        .filter_map(|entry| {
+            let route_path = derive_route_path(
+                &canonical_scan_dir,
+                &entry.file_path,
+                prefix.as_deref(),
+            );
+            match generate_page_registration(
+                &entry.file_path,
+                &route_path,
+                &components,
+                &overrides,
+                input.wrapper.as_ref(),
+                input.frontmatter_type.as_ref(),
+                span,
+            ) {
+                Ok(ts) => Some(ts),
+                Err(e) => Some(e.to_compile_error()),
+            }
+        })
+        .collect();
+
+    // Build index entries from scanned pages.
+    let index_entries = build_index(&page_entries, span);
+
+    // Derive a stable identifier from the directory path for the index name.
+    let index_suffix = dir_str
+        .replace(std::path::MAIN_SEPARATOR, "_")
+        .replace('/', "_")
+        .replace('-', "_")
+        .to_uppercase();
+
+    let index_const_name = Ident::new(
+        &format!("MDX_INDEX_{index_suffix}"),
+        span,
+    );
+    let index_fn_name = Ident::new(
+        &format!("mdx_index_{}", index_suffix.to_lowercase()),
+        span,
+    );
+
+    // Combine route results into a single TokenStream.
+    let route_tokens = route_results.into_iter().collect::<proc_macro2::TokenStream>();
+
+    // Build index const using the collected entries.
+    let index_const_tokens = quote! {
+        &[
+            #(#index_entries),*
+        ]
+    };
+
+    quote! {
+        #route_tokens
+
+        #[allow(clippy::approx_constant)]
+        const #index_const_name: &'static [#topcoat_mdx::MdxIndexEntry] = #index_const_tokens;
+
+        #[allow(clippy::approx_constant)]
+        fn #index_fn_name() -> &'static [#topcoat_mdx::MdxIndexEntry] {
+            #index_const_name
+        }
+    }
+    .into()
+}
+
+/// A scanned page entry: file path, parsed content, and frontmatter data.
+struct MdxPageEntry {
+    file_path: std::path::PathBuf,
+}
+
+/// Scans a directory for `.mdx` and `.md` files, returning valid entries.
+fn scan_directory(
+    canonical_scan_dir: &Path,
+    canonical_manifest: &Path,
+    _span: Span,
+) -> Vec<MdxPageEntry> {
+    let mut entries = Vec::new();
+
+    for entry in ignore::Walk::new(canonical_scan_dir) {
         let Ok(entry) = entry else {
-            // Skip entries that cannot be read (e.g., permission errors).
-            // These are non-fatal — just log and continue.
             continue;
         };
 
-        let file_path = entry.path();
+        let file_path = entry.path().to_path_buf();
 
         // Only process .mdx and .md files.
         let is_target = file_path
@@ -1145,46 +1227,142 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         }
 
         // Security: verify resolved path stays within manifest directory (T-03-04).
-        // Canonicalize first so that unresolved `..` components cannot bypass
-        // the starts_with check against the canonical manifest path.
-        let resolved_path = file_path.canonicalize().unwrap_or_else(|_| file_path.to_path_buf());
-        if !resolved_path.starts_with(&canonical_manifest) {
-            results.push(
-                syn::Error::new(
-                    span,
-                    format!(
-                        "mdx_pages! file '{}' escapes CARGO_MANIFEST_DIR (T-03-04)",
-                        file_path.display()
-                    ),
-                )
-                .to_compile_error(),
-            );
+        let resolved_path = file_path.canonicalize().unwrap_or_else(|_| file_path.clone());
+        if !resolved_path.starts_with(canonical_manifest) {
             continue;
         }
 
-        // Derive the route path.
-        let route_path = derive_route_path(&canonical_scan_dir, file_path, prefix.as_deref());
+        entries.push(MdxPageEntry { file_path });
+    }
 
-        // Generate registration tokens for this file.
-        match generate_page_registration(
-            file_path,
-            &route_path,
-            &components,
-            &overrides,
-            input.wrapper.as_ref(),
-            input.frontmatter_type.as_ref(),
-            span,
-        ) {
-            Ok(ts) => results.push(ts),
-            Err(e) => results.push(e.to_compile_error()),
+    entries
+}
+
+/// Builds index entries from scanned pages.
+///
+/// For each page, extracts title/date/tags/excerpt from frontmatter
+/// using generic serde_value::Value parsing.
+fn build_index(
+    entries: &[MdxPageEntry],
+    _span: Span,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut index_items = Vec::new();
+
+    for entry in entries {
+        let resolved = entry.file_path.canonicalize().unwrap_or_else(|_| {
+            entry.file_path.clone()
+        });
+
+        let content = match std::fs::read_to_string(&resolved) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Parse the markdown content.
+        let options = get_parse_options();
+        let root = match markdown::to_mdast(&content, &options) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        // Extract frontmatter data.
+        let frontmatter = extract_frontmatter(&root);
+
+        // Derive slug from file stem using kebab-case.
+        let slug = resolved
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("page")
+            .to_kebab_case();
+        let slug_str: &'static str = Box::leak(slug.into_boxed_str());
+
+        // Extract known fields from frontmatter using generic deserialization.
+        let (title_expr, date_expr, excerpt_expr, tags_expr) =
+            if let Some((fm_content, format)) = &frontmatter {
+                let deserialized: serde_value::Value =
+                    if matches!(format, FrontmatterFormat::Yaml) {
+                        serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
+                            eprintln!("mdx_pages! failed to deserialize frontmatter YAML: {e}");
+                            serde_value::Value::Unit
+                        })
+                    } else {
+                        toml::from_str(fm_content).unwrap_or_else(|e| {
+                            eprintln!("mdx_pages! failed to deserialize frontmatter TOML: {e}");
+                            serde_value::Value::Unit
+                        })
+                    };
+
+                let title = extract_string_field(&deserialized, "title");
+                let date = extract_string_field(&deserialized, "date");
+                let excerpt = extract_string_field(&deserialized, "excerpt");
+                let tags = extract_tags_field(&deserialized);
+
+                (
+                    title.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    date.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    excerpt.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    tags,
+                )
+            } else {
+                (
+                    quote! { None },
+                    quote! { None },
+                    quote! { None },
+                    quote! { &[] },
+                )
+            };
+
+        index_items.push(quote! {
+            #topcoat_mdx::MdxIndexEntry {
+                slug: #slug_str,
+                title: #title_expr,
+                date: #date_expr,
+                excerpt: #excerpt_expr,
+                tags: #tags_expr,
+            }
+        });
+    }
+
+    index_items
+}
+
+/// Extract a string field from a serde_value::Value Map.
+fn extract_string_field(value: &serde_value::Value, field: &str) -> Option<LitStr> {
+    if let serde_value::Value::Map(entries) = value {
+        if let Some(inner) = entries.get(&serde_value::Value::String(field.to_string())) {
+            if let serde_value::Value::String(s) = inner {
+                return Some(LitStr::new(s, Span::call_site()));
+            }
         }
     }
-
-    quote! {
-        #(#results)*
-    }
-    .into()
+    None
 }
+
+/// Extract a tags field (sequence of strings) from a serde_value::Value Map.
+fn extract_tags_field(value: &serde_value::Value) -> proc_macro2::TokenStream {
+    if let serde_value::Value::Map(entries) = value {
+        if let Some(serde_value::Value::Seq(items)) =
+            entries.get(&serde_value::Value::String("tags".to_string()))
+        {
+            let tag_lits: Vec<LitStr> = items
+                .iter()
+                .filter_map(|v| {
+                    if let serde_value::Value::String(s) = v {
+                        Some(LitStr::new(s, Span::call_site()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if !tag_lits.is_empty() {
+                return quote! { &#(#tag_lits),* };
+            }
+        }
+    }
+    quote! { &[] }
+}
+
 
 // ---------------------------------------------------------------------------
 // serde_value::Value -> syn::Expr conversion
