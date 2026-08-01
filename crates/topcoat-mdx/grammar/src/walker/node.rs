@@ -1233,4 +1233,70 @@ mod tests {
             view.nodes.len()
         );
     }
+
+    // ---- Footnote tests ----
+
+    #[test]
+    fn footnote_reference_renders_as_superscript() {
+        // [^1] should render as <sup><a href="#fn-1">1</a></sup>
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "See note[^1].\n\n[^1]: This is a footnote.",
+        ).expect("should parse");
+        // The paragraph should contain a <sup> element.
+        assert!(!view.nodes.is_empty());
+        let has_sup = view.nodes.iter().any(|n| {
+            if let Node::Element(p) = n {
+                p.name().string_name().as_deref() == Some("p")
+                    && p.children().iter().any(|c| {
+                        if let Node::Element(e) = c {
+                            e.name().string_name().as_deref() == Some("sup")
+                        } else {
+                            false
+                        }
+                    })
+            } else {
+                false
+            }
+        });
+        assert!(has_sup, "footnote reference should render as <sup>");
+    }
+
+    #[test]
+    fn footnote_section_at_document_end() {
+        // Footnote definitions should render as <ol> at document end.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "See note[^1].\n\n[^1]: This is a footnote.",
+        ).expect("should parse");
+        // The view should contain an <ol> with footnote items.
+        let has_ol = view.nodes.iter().any(|n| {
+            if let Node::Element(e) = n {
+                e.name().string_name().as_deref() == Some("ol")
+            } else {
+                false
+            }
+        });
+        assert!(has_ol, "footnote section should render as <ol> at document end");
+    }
+
+    #[test]
+    fn footnote_definition_skipped_during_main_walk() {
+        // FootnoteDefinition nodes should not appear as rendered content
+        // in the main walk (only in the document-end <ol> section).
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "Body text.\n\n[^1]: Footnote content.",
+        ).expect("should parse");
+        // Only body paragraph should appear (no footnote content inline).
+        // Since no FootnoteReference is used, there should be no <ol> section.
+        assert!(
+            view.nodes.len() == 1,
+            "should only have body paragraph when no footnote reference used, got {}",
+            view.nodes.len()
+        );
+    }
 }
