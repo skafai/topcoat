@@ -68,7 +68,7 @@ pub(crate) fn parse_component_braces(content: ParseStream) -> syn::Result<Vec<(S
 impl Parse for CompileMdxInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Pattern 1: { Ident => Path, ... } [, overrides = { "tag" => Path, ... }]
-        // [, wrapper = Path], "path.mdx" — direct braced block
+        // [, wrapper = Path], "path.mdx": direct braced block
         if input.peek(syn::token::Brace) {
             let content;
             syn::braced!(content in input);
@@ -94,7 +94,7 @@ impl Parse for CompileMdxInput {
         }
 
         // Pattern 2: mdx_components!{ Ident => Path, ... } [, overrides = { "tag" => Path, ... }]
-        // [, wrapper = Path], "path.mdx" — mdx_components! macro_rules! invocation.
+        // [, wrapper = Path], "path.mdx": mdx_components! macro_rules! invocation.
         if input.peek(Ident) {
             let fork = input.fork();
             let maybe_ident: Ident = fork.parse()?;
@@ -128,7 +128,7 @@ impl Parse for CompileMdxInput {
             }
         }
 
-        // Pattern 3: "path.mdx" — backward compatible one-arg form
+        // Pattern 3: "path.mdx", the backward compatible one-arg form
         let lit_str: LitStr = input.parse()?;
         Ok(Self::OneArg { lit_str })
     }

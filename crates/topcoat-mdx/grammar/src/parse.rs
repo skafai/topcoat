@@ -24,7 +24,7 @@ pub fn get_parse_options() -> ParseOptions {
     constructs.mdx_jsx_text = true;
     constructs.frontmatter = true;
     // Disable HTML passthrough so that <Widget /> is not consumed as raw
-    // COMPLETE HTML. This is a security improvement — raw <script>/<iframe>
+    // COMPLETE HTML. This is a security improvement: raw <script>/<iframe>
     // cannot slip through the MDX pipeline.
     constructs.html_flow = false;
     constructs.html_text = false;

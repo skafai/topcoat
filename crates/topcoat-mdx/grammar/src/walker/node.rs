@@ -33,7 +33,7 @@ pub(crate) fn is_safe_url(url: &str) -> bool {
 
 /// Walks a link node: `<a href="url" title="...">...</a>`.
 /// Strips dangerous URL schemes (javascript:, vbscript:, data:)
-/// to prevent XSS — renders link text as a `<span>` without href.
+/// to prevent XSS, rendering link text as a `<span>` without href.
 pub(crate) fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     if !is_safe_url(&link.url) {
         // Strip the href to prevent XSS; render link text only.
@@ -60,7 +60,7 @@ pub(crate) fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node
 
 /// Walks an image node: `<img src="url" alt="alt" title="...">`.
 /// Strips dangerous URL schemes (javascript:, vbscript:, data:)
-/// to prevent XSS — renders alt text only without src.
+/// to prevent XSS, rendering alt text only without src.
 pub(crate) fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> Node {
     if !is_safe_url(&image.url) {
         // Strip the src to prevent XSS; render alt text only.
@@ -158,7 +158,7 @@ pub(crate) fn walk_list_item(ctx: &WalkContext, item: &markdown::mdast::ListItem
             let input_el = self_closing_element("input", with_attributes(input_attrs));
             children.push(Node::Element(Box::new(input_el)));
         } else {
-            // <input type="checkbox" disabled /> — no checked attribute
+            // <input type="checkbox" disabled />, so no checked attribute
             let input_attrs = vec![
                 create_attribute("type", "checkbox"),
                 create_attribute("disabled", ""),
@@ -175,7 +175,7 @@ pub(crate) fn walk_list_item(ctx: &WalkContext, item: &markdown::mdast::ListItem
 pub(crate) fn walk_table(ctx: &WalkContext, table: &markdown::mdast::Table) -> Node {
     let mut child_nodes = Vec::new();
 
-    // Iterate over table.children — each is Node::TableRow.
+    // Iterate over table.children, each of which is a Node::TableRow.
     let row_nodes: Vec<&markdown::mdast::TableRow> = table
         .children
         .iter()
@@ -313,7 +313,7 @@ pub(crate) fn walk_link_reference(
             "a", attributes, children,
         )));
     }
-    // Unknown reference — emit compile-time error.
+    // Unknown reference: emit a compile-time error.
     ctx.errors.borrow_mut().push(format!(
         "unknown reference link target: '{}'",
         link_ref.identifier
@@ -358,7 +358,7 @@ pub(crate) fn walk_image_reference(
         }
         return Node::Element(Box::new(void_element_with_attrs("img", attributes)));
     }
-    // Unknown reference — emit compile-time error.
+    // Unknown reference: emit a compile-time error.
     ctx.errors.borrow_mut().push(format!(
         "unknown reference image target: '{}'",
         img_ref.identifier
