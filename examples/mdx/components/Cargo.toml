@@ -1,0 +1,11 @@
+[package]
+name = "mdx-components"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Stub -- replaced by 05-02 plan
+[dependencies]
+
+[lints]
+workspace = true

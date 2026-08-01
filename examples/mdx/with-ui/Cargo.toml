@@ -1,0 +1,11 @@
+[package]
+name = "mdx-with-ui"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Stub -- replaced by 05-05 plan
+[dependencies]
+
+[lints]
+workspace = true
