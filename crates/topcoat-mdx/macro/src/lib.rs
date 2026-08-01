@@ -23,7 +23,10 @@ use topcoat_core_grammar::paths::{
 };
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
-    walker::{FrontmatterFormat, extract_frontmatter, find_excerpt_split, walk_to_writer},
+    walker::{
+        FrontmatterFormat, extract_frontmatter, find_excerpt_split, walk_excerpt_to_writer,
+        walk_to_writer,
+    },
 };
 use topcoat_view_grammar::view::ViewWriter;
 
@@ -445,10 +448,13 @@ fn parse_and_walk_mdx(
 
     // Two-writer approach: if an excerpt split point exists, walk excerpt
     // children into a separate writer and body children into the main writer.
+    // Excerpt children are walked through `walk_excerpt_to_writer` which
+    // strips `<!-- more -->` from text content so the marker does not appear
+    // as visible text in rendered output (CR-01).
     let excerpt_tokens = if let Some(split_idx) = excerpt_split {
         let mut excerpt_writer = ViewWriter::new_nested();
         for child in &post_fm_children[..split_idx] {
-            walk_to_writer(&ctx, child, &mut excerpt_writer);
+            walk_excerpt_to_writer(&ctx, child, &mut excerpt_writer);
         }
         for child in &post_fm_children[split_idx..] {
             walk_to_writer(&ctx, child, &mut writer);
