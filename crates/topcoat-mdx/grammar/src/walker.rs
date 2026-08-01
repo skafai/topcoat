@@ -276,6 +276,11 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             let id_value = if base_slug.is_empty() {
                 tag.clone()
             } else {
+                // The slug counter is shared across heading levels, so that
+                // "# Hello" and "## Hello" produce ids "hello" and "hello-1".
+                // Some implementations (e.g., GitHub, Jekyll) maintain per-level
+                // counters, but the shared model is simpler and avoids collisions
+                // when different heading levels use the same text.
                 let count = {
                     let mut seen = ctx.seen_ids.borrow_mut();
                     let c = seen.get(&base_slug).copied().unwrap_or(0);
