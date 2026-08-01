@@ -117,12 +117,8 @@ Each heading element receives an `id` attribute generated from its text content.
 
 Fenced code block meta strings are parsed and attached as `data-*` attributes on the `<pre>` element: `data-lang` for the language identifier, `data-lines` for line highlight ranges, `data-title` for the block title, and `data-emphasis` for search terms.
 
-## Excerpt extraction
-
-When a `.mdx` file contains `<!-- more -->` as a text node, the content before that marker is treated as the excerpt. The excerpt is available for content indexing when used with `mdx_pages!`.
-
 # File Extensions
 
-Files with the `.mdx` extension support embedded component tags. Files with the `.md` extension are parsed as plain markdown with no component support. Both extensions are accepted by this macro.
+Both extensions are parsed with the same MDX grammar; the extension is a naming convention, not a parser switch. Component tags work in `.md` files too, and MDX syntax rules (such as `{/* text */}` comments) apply to both. Both extensions are accepted by this macro.
 
 [`mdx_components!`]: macro.mdx_components.html

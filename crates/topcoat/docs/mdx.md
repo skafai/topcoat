@@ -30,47 +30,54 @@ The `compile_mdx!` macro resolves file paths relative to `CARGO_MANIFEST_DIR`. T
 
 The parser supports `CommonMark` and GFM extensions including tables, strikethrough, task lists, and autolinks. HTML passthrough is disabled so that only component tags are processed through the MDX JSX path.
 
-See the [`compile_mdx!`][compile_mdx] reference for the full list of supported features: reference links, footnotes, heading IDs, code block meta strings, and excerpt extraction.
+See the [`compile_mdx!`][compile_mdx] reference for the full list of supported features: reference links, footnotes, heading IDs, and code block meta strings.
 
 # Component Embedding
 
 Use [`mdx_components!`][mdx_components] to declare a registry of component mappings. Each entry pairs an identifier with a Rust component path. When the parser encounters a matching tag in an `.mdx` file, it renders the mapped component.
 
-```rust,ignore
-use topcoat::mdx::mdx_components;
-
-let registry = mdx_components! {
+```text
+mdx_components! {
     Callout => crate::components::callout,
     Divider => crate::components::divider,
-};
+}
 ```
 
 Component tags receive props from attribute syntax and children from body content. Self-closing tags like `<Divider />` are supported. See the [`mdx_components!`][mdx_components] reference for syntax details.
 
 # Frontmatter
 
-MDX files can carry YAML or TOML frontmatter. The [`mdx_page!`][mdx_page] macro deserializes it at compile time and stores the result in the request extensions. Read it with the `Frontmatter<T>` extractor:
+MDX files can carry YAML or TOML frontmatter, delimited by `---` for YAML or `+++` for TOML. It never renders as content.
 
-```rust,ignore
-use serde::Deserialize;
-use topcoat::mdx::Frontmatter;
+```mdx
+---
+title: Hello
+date: "2024-01-01"
+tags:
+  - rust
+---
 
-#[derive(Deserialize)]
-struct BlogMeta {
-    title: String,
-    date: String,
-}
-
-#[page("/blog/hello")]
-async fn hello_page(
-    cx: &Cx,
-    meta: Frontmatter<BlogMeta>,
-) -> topcoat::Result {
-    view! { cx => <h1>(meta.title)</h1> }
-}
+# Hello
 ```
 
-`Frontmatter<T>` implements `Deref<Target = T>` and `FromRequest`, making it a zero-cost extractor when used with `#[page]` handlers backed by `mdx_page!`.
+[`mdx_pages!`][mdx_pages] reads the `title`, `date`, `excerpt`, and `tags` fields of every scanned file into a compile-time index, reachable through a generated accessor:
+
+```rust,ignore
+use topcoat::{Result, mdx::mdx_pages, router::page, view::view};
+
+mdx_pages!("posts", prefix = "/blog");
+
+#[page("/blog")]
+async fn blog_index() -> Result {
+    view! {
+        <ul>
+            for post in mdx_index_posts() {
+                <li><a href=(post.path)>(post.title.unwrap_or(post.slug))</a></li>
+            }
+        </ul>
+    }
+}
+```
 
 # Routes
 
@@ -105,7 +112,7 @@ See the [`compile_mdx!`][compile_mdx] reference for the full list of overridable
 
 # File Extensions
 
-Files with the `.mdx` extension support embedded component tags. Files with the `.md` extension are parsed as plain markdown with no component support. Both extensions are accepted by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`.
+Both extensions are parsed with the same MDX grammar; the extension is a naming convention, not a parser switch. Component tags work in `.md` files too, and MDX syntax rules (such as `{/* text */}` comments) apply to both. Both extensions are accepted by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`.
 
 # Discover
 

@@ -37,7 +37,7 @@ Topcoat MDX uses `markdown-rs` as its parser, which supports `CommonMark` and th
 
 HTML passthrough is disabled. Raw HTML blocks and inline HTML tags are not rendered. This is a security measure: raw `<script>` and `<iframe>` elements cannot slip through the MDX pipeline. Only `<` tokens dispatched to MDX JSX productions are processed.
 
-Files with the `.mdx` extension allow embedded component tags. Files with the `.md` extension are parsed as plain markdown with no component support. Both extensions are accepted by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`.
+Both extensions are accepted by `compile_mdx!`, `mdx_page!`, and `mdx_pages!`, and both are parsed with the same MDX grammar. The extension is a naming convention for the reader, not a parser switch: component tags work in a `.md` file too, and MDX syntax rules apply to both. Use `{/* text */}` for comments; an HTML comment is a parse error in either extension.
 
 # Component Embedding
 
@@ -54,34 +54,15 @@ Pass the registry as the first argument to `compile_mdx!`. The macro reads it as
 
 # Frontmatter
 
-MDX files can carry YAML or TOML frontmatter at the top of the document. The [`mdx_page!`] macro deserializes frontmatter at compile time and stores the result in the request extensions. Read it in your handler with `Frontmatter<T>`:
+MDX files can carry YAML or TOML frontmatter at the top of the document, delimited by `---` for YAML or `+++` for TOML. Frontmatter never renders as content.
 
-```rust,ignore
-use serde::Deserialize;
-use topcoat::mdx::Frontmatter;
-
-#[derive(Deserialize)]
-struct BlogMeta {
-    title: String,
-    date: String,
-}
-
-#[page("/blog/hello")]
-async fn hello_page(
-    cx: &Cx,
-    Frontmatter(meta): Frontmatter<BlogMeta>,
-) -> topcoat::Result {
-    view! { cx => <h1>(meta.title)</h1> }
-}
-```
-
-`Frontmatter<T>` implements `Deref<Target = T>`, so you can access the inner value directly. It also implements `FromRequest`, making it a zero-cost extractor when used with `#[page]` handlers backed by `mdx_page!`.
+[`mdx_pages!`] reads the `title`, `date`, `excerpt`, and `tags` fields of every file it scans into a compile-time index. Read that index through the generated accessor to build listings, tag pages, and sitemaps. See the [`mdx_pages!`] reference for the index shape.
 
 # Route Registration
 
 The [`mdx_page!`] macro compiles a single file and registers it as a route handler. The [`mdx_pages!`] macro walks a directory tree, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename.
 
-Both macros accept optional `frontmatter`, `components`, `overrides`, and `wrapper` arguments. See the macro reference docs for details.
+Both macros accept optional `components`, `overrides`, and `wrapper` arguments. See the macro reference docs for details.
 
 [`mdx_components!`]: macro.mdx_components.html
 [`mdx_page!`]: macro.mdx_page.html

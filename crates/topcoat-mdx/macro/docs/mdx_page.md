@@ -1,16 +1,9 @@
 The `mdx_page!` macro compiles a single `.mdx` or `.md` file and registers it as a page route. The macro reads the file at compile time, parses it with `markdown-rs`, walks the syntax tree into `view!` AST nodes, and submits the route to the inventory so that `Router::builder().discover()` picks it up.
 
 ```rust,ignore
-use serde::Deserialize;
 use topcoat::{mdx::mdx_page, router::Router, router::RouterBuilderDiscoverExt};
 
-#[derive(Deserialize)]
-struct BlogMeta {
-    title: String,
-    date: String,
-}
-
-mdx_page!("/blog/hello", "content/hello.mdx", frontmatter = BlogMeta);
+mdx_page!("/blog/hello", "content/hello.mdx");
 
 let router = Router::builder().discover().build();
 ```
@@ -18,7 +11,7 @@ let router = Router::builder().discover().build();
 # Syntax
 
 ```text
-mdx_page!(route_path, file_path [, frontmatter = Type] [, components = {...}] [, overrides = {...}] [, wrapper = Path])
+mdx_page!(route_path, file_path [, components = {...}] [, overrides = {...}] [, wrapper = Path])
 ```
 
 The `route_path` and `file_path` arguments are required string literals. All remaining arguments are optional and may appear in any order.
@@ -37,32 +30,6 @@ A string literal pointing to the `.mdx` or `.md` file, relative to `CARGO_MANIFE
 
 ```rust,ignore
 mdx_page!("/about", "pages/about.mdx");
-```
-
-## Frontmatter
-
-Pass `frontmatter = Type` to deserialize the file frontmatter at compile time into a Rust struct:
-
-```rust,ignore
-#[derive(serde::Deserialize)]
-struct BlogMeta {
-    title: String,
-    date: String,
-}
-
-mdx_page!("/blog/hello", "content/hello.mdx", frontmatter = BlogMeta);
-```
-
-The macro reads YAML or TOML frontmatter from the file, deserializes it into a `serde_value::Value`, and then converts it into a `const` of the specified type. The frontmatter is stored in the request extensions on each handler invocation. Read it with the `Frontmatter<T>` extractor:
-
-```rust,ignore
-#[page("/blog/hello")]
-async fn hello_page(
-    cx: &Cx,
-    meta: Frontmatter<BlogMeta>,
-) -> topcoat::Result {
-    view! { cx => <h1>(meta.title)</h1> }
-}
 ```
 
 ## Components
@@ -133,12 +100,8 @@ Footnote definitions are collected and rendered as a numbered section at the end
 
 Fenced code block meta strings are parsed and attached as `data-*` attributes on the `<pre>` element: `data-lang`, `data-lines`, `data-title`, and `data-emphasis`.
 
-## Excerpt extraction
-
-When the file contains `<!-- more -->` as a text node, content before that marker is treated as the excerpt. Use `mdx_pages!` to access excerpt data through its content indexer.
-
 # File Extensions
 
-Files with the `.mdx` extension support embedded component tags. Files with the `.md` extension are parsed as plain markdown with no component support. Both extensions are accepted.
+Both extensions are parsed with the same MDX grammar; the extension is a naming convention, not a parser switch. Component tags work in `.md` files too, and MDX syntax rules (such as `{/* text */}` comments) apply to both.
 
 [`compile_mdx!`]: macro.compile_mdx.html

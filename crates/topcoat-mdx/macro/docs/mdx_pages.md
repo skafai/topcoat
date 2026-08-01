@@ -28,7 +28,7 @@ Without `.discover()`, the `#[page]`, `#[layout]`, and `#[route]` items in your 
 # Syntax
 
 ```text
-mdx_pages!(directory_path [, prefix = "/path"] [, frontmatter = Type] [, components = {...}] [, overrides = {...}] [, wrapper = Path])
+mdx_pages!(directory_path [, prefix = "/path"] [, components = {...}] [, overrides = {...}] [, wrapper = Path])
 ```
 
 The `directory_path` argument is a required string literal. All remaining arguments are optional and may appear in any order.
@@ -59,22 +59,6 @@ Route paths are derived from file structure relative to the scan directory. File
 |---|---|---|
 | `hello-world.mdx` | `/hello-world` | `/blog/hello-world` |
 | `nested/post.mdx` | `/nested/post` | `/blog/nested/post` |
-
-## Shared frontmatter
-
-Pass `frontmatter = Type` to deserialize the frontmatter of every page in the directory using the same type:
-
-```rust,ignore
-#[derive(serde::Deserialize)]
-struct BlogMeta {
-    title: String,
-    date: String,
-}
-
-mdx_pages!("content/blog", prefix = "/blog", frontmatter = BlogMeta);
-```
-
-All pages must use compatible frontmatter shapes. If different directories need different types, use separate `mdx_pages!` calls.
 
 ## Shared components
 
@@ -123,7 +107,7 @@ Each `MdxIndexEntry` contains the following fields populated from frontmatter an
 - `slug`: the kebab-cased route slug derived from the file stem
 - `title`: the `title` field from frontmatter, if present
 - `date`: the `date` field from frontmatter, if present
-- `excerpt`: the `excerpt` field from frontmatter, or the content before `<!-- more -->`
+- `excerpt`: the `excerpt` field from frontmatter, if present
 - `tags`: the `tags` field from frontmatter as a slice of strings, empty if absent
 
 ## Index accessor function
@@ -152,7 +136,7 @@ async fn blog_index() -> Result {
 
 # File Extensions
 
-Files with the `.mdx` extension support embedded component tags. Files with the `.md` extension are parsed as plain markdown. Both extensions are scanned.
+Both extensions are scanned and parsed with the same MDX grammar; the extension is a naming convention, not a parser switch. Component tags work in `.md` files too.
 
 [`compile_mdx!`]: macro.compile_mdx.html
 [`MdxIndexEntry`]: struct.MdxIndexEntry.html
