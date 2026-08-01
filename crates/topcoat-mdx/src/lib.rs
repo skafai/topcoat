@@ -10,14 +10,45 @@
 mod frontmatter;
 
 pub use frontmatter::Frontmatter;
-pub use topcoat_mdx_macro::compile_mdx;
-pub use topcoat_mdx_macro::mdx_page;
-pub use topcoat_mdx_macro::mdx_pages;
+pub use topcoat_mdx_macro::{compile_mdx, mdx_page, mdx_pages};
+
+/// A component registration entry for the MDX component inventory.
+///
+/// Submitted by `mdx_components!` when the `discover` feature is enabled,
+/// allowing runtime discovery of component registrations.
+#[derive(Debug, Clone)]
+pub struct MdxComponentMapping {
+    /// The MDX tag name (e.g., `"Callout"`, `"Divider"`).
+    pub tag: &'static str,
+    /// The Rust component path as a string (e.g., `"components::callout"`).
+    /// Stored as `&'static str` because `syn::Path` is not `Send`.
+    pub path: &'static str,
+}
+
+/// An HTML element override entry for the MDX override inventory.
+///
+/// Submitted by override declarations when the `discover` feature is enabled,
+/// allowing runtime discovery of element-to-component substitutions.
+#[derive(Debug, Clone)]
+pub struct MdxOverrideMapping {
+    /// The HTML tag name (e.g., `"a"`, `"h1"`, `"pre"`).
+    pub tag: &'static str,
+    /// The Rust component path as a string.
+    pub path: &'static str,
+}
+
+#[cfg(feature = "discover")]
+inventory::collect!(MdxComponentMapping);
+
+#[cfg(feature = "discover")]
+inventory::collect!(MdxOverrideMapping);
 
 /// Declares a component registry mapping MDX tag names to Rust component paths.
 ///
 /// Produces a braced block of `Ident => Path` pairs that `compile_mdx!` parses
-/// as the component registry argument (D-01).
+/// as the component registry argument (D-01). When the `discover` feature is
+/// enabled, also submits each mapping to the global inventory for runtime
+/// discovery.
 ///
 /// ```ignore
 /// mdx_components! {
@@ -30,8 +61,29 @@ pub use topcoat_mdx_macro::mdx_pages;
 /// `crate::components::callout`).
 #[macro_export]
 macro_rules! mdx_components {
-    ($($name:ident => $path:path),* $(,)?) => {
+    ($($name:ident => $path:path),* $(,)?) => {{
+        // Submit each mapping to the global inventory when discover is enabled.
+        $crate::__mdx_submit_components!($($name => $path),*);
+
+        // Produce the braced block for explicit use.
         $crate::__mdx_components_block!($($name => $path),*)
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __mdx_submit_components {
+    () => {};
+    ($($name:ident => $path:path),* $(,)?) => {
+        $(
+            #[cfg(feature = "discover")]
+            $crate::internal::inventory::submit! {
+                $crate::MdxComponentMapping {
+                    tag: stringify!($name),
+                    path: stringify!($path),
+                }
+            }
+        )*
     };
 }
 
@@ -42,7 +94,3 @@ macro_rules! __mdx_components_block {
         { $($name => $path),* }
     };
 }
-
-// Note: mdx_components! produces { Ident => Path } braced blocks that are
-// consumed by compile_mdx! as proc-macro tokens — they are not valid Rust
-// expressions. Verification is via cargo check and the macro crate tests.
