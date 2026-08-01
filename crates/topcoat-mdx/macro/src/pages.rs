@@ -111,7 +111,7 @@ pub(crate) fn scan_directory(
 /// Builds index entries from scanned pages.
 ///
 /// For each page, extracts title/date/tags/excerpt from frontmatter
-/// using generic serde_value::Value parsing.
+/// using generic `serde_value::Value` parsing.
 pub(crate) fn build_index(
     entries: &[MdxPageEntry],
     _span: Span,
@@ -123,17 +123,11 @@ pub(crate) fn build_index(
             entry.file_path.clone()
         });
 
-        let content = match std::fs::read_to_string(&resolved) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+        let Ok(content) = std::fs::read_to_string(&resolved) else { continue };
 
         // Parse the markdown content.
         let options = get_parse_options();
-        let root = match markdown::to_mdast(&content, &options) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+        let Ok(root) = markdown::to_mdast(&content, &options) else { continue };
 
         // Extract frontmatter data.
         let frontmatter = extract_frontmatter(&root);
@@ -196,38 +190,36 @@ pub(crate) fn build_index(
     index_items
 }
 
-/// Extract a string field from a serde_value::Value Map.
+/// Extract a string field from a `serde_value::Value` Map.
 fn extract_string_field(value: &serde_value::Value, field: &str) -> Option<LitStr> {
-    if let serde_value::Value::Map(entries) = value {
-        if let Some(inner) = entries.get(&serde_value::Value::String(field.to_string())) {
-            if let serde_value::Value::String(s) = inner {
-                return Some(LitStr::new(s, Span::call_site()));
-            }
-        }
+    if let serde_value::Value::Map(entries) = value
+        && let Some(serde_value::Value::String(s)) = entries.get(&serde_value::Value::String(field.to_string()))
+    {
+        Some(LitStr::new(s, Span::call_site()))
+    } else {
+        None
     }
-    None
 }
 
-/// Extract a tags field (sequence of strings) from a serde_value::Value Map.
+/// Extract a tags field (sequence of strings) from a `serde_value::Value` Map.
 fn extract_tags_field(value: &serde_value::Value) -> proc_macro2::TokenStream {
-    if let serde_value::Value::Map(entries) = value {
-        if let Some(serde_value::Value::Seq(items)) =
+    if let serde_value::Value::Map(entries) = value
+        && let Some(serde_value::Value::Seq(items)) =
             entries.get(&serde_value::Value::String("tags".to_string()))
-        {
-            let tag_lits: Vec<LitStr> = items
-                .iter()
-                .filter_map(|v| {
-                    if let serde_value::Value::String(s) = v {
-                        Some(LitStr::new(s, Span::call_site()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+    {
+        let tag_lits: Vec<LitStr> = items
+            .iter()
+            .filter_map(|v| {
+                if let serde_value::Value::String(s) = v {
+                    Some(LitStr::new(s, Span::call_site()))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-            if !tag_lits.is_empty() {
-                return quote! { &#(#tag_lits),* };
-            }
+        if !tag_lits.is_empty() {
+            return quote! { &#(#tag_lits),* };
         }
     }
     quote! { &[] }

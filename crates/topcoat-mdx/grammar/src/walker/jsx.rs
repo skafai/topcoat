@@ -158,22 +158,22 @@ pub(crate) fn build_override_component(
 
 /// Converts an `HtmlIdent` (which may contain hyphen/colon/dot segments) into
 /// a valid Rust identifier name. Hyphenated segments like `data-lang` become
-/// snake_case (`data_lang`). Colon and dot separators are converted to
+/// `snake_case` (`data_lang`). Colon and dot separators are converted to
 /// underscores. Used by `build_override_component` to forward attribute names
 /// to the override component's props builder.
 fn html_ident_to_string(ident: &topcoat_view_grammar::view::HtmlIdent) -> String {
     let mut result = ident.first.to_string();
     for seg in &ident.rest {
         let sep_char = match &seg.separator {
-            topcoat_view_grammar::view::HtmlIdentSeparator::Dash(_) => '_',
-            topcoat_view_grammar::view::HtmlIdentSeparator::Colon(_) => '_',
-            topcoat_view_grammar::view::HtmlIdentSeparator::Dot(_) => '_',
+            topcoat_view_grammar::view::HtmlIdentSeparator::Dash(_)
+            | topcoat_view_grammar::view::HtmlIdentSeparator::Colon(_)
+            | topcoat_view_grammar::view::HtmlIdentSeparator::Dot(_) => '_',
         };
         result.push(sep_char);
         match &seg.part {
             topcoat_view_grammar::view::HtmlIdentPart::Ident(i) => result.push_str(&i.to_string()),
             topcoat_view_grammar::view::HtmlIdentPart::Int(lit) => {
-                result.push_str(&lit.base10_digits().to_string());
+                result.push_str(lit.base10_digits());
             }
         }
     }

@@ -27,12 +27,9 @@ pub(crate) fn text_node(content: &str) -> Node {
 /// Panics if `name` is empty or starts with a digit, because those inputs
 /// produce unhelpful panics inside `Ident::new`.
 pub(crate) fn make_ident(name: &str) -> Ident {
-    if name.is_empty() {
-        panic!(
-            "make_ident: identifier cannot be empty \
-            (source: attribute or tag name)"
-        );
-    }
+    assert!(!name.is_empty(),
+        "make_ident: identifier cannot be empty \
+        (source: attribute or tag name)");
     syn::parse_str(name).unwrap_or_else(|_| Ident::new(name, Span::call_site()))
 }
 
@@ -248,6 +245,7 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
 ///
 /// Returns `Some(idx)` where `children[..idx]` is the excerpt portion and
 /// `children[idx..]` is the body portion. Returns `None` if no marker is found.
+#[must_use]
 pub fn find_excerpt_split(children: &[markdown::mdast::Node]) -> Option<usize> {
     for (idx, node) in children.iter().enumerate() {
         match node {

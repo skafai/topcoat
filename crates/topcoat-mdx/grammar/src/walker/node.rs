@@ -398,7 +398,7 @@ pub(crate) fn walk_footnote_section(
     footnote_order: &[String],
 ) -> Node {
     let mut li_nodes = Vec::new();
-    for id in footnote_order.iter() {
+    for id in footnote_order {
         // Find the footnote definition content.
         let content = ctx
             .footnotes
@@ -407,9 +407,9 @@ pub(crate) fn walk_footnote_section(
             .map(|(_, children)| super::walk_nodes(ctx, children));
         let content = content.unwrap_or_else(Nodes::new);
         // Build back-reference link: <a href="#fnref-{id}">.
-        let back_ref_href = format!("#fnref-{}", id);
+        let back_ref_href = format!("#fnref-{id}");
         let back_ref_attrs = with_attributes(vec![create_attribute("href", &back_ref_href)]);
-        let back_ref_text = text_node(&id);
+        let back_ref_text = text_node(id);
         let back_ref = Node::Element(Box::new(normal_element_with_attrs(
             "a", back_ref_attrs, Nodes::from(vec![back_ref_text]),
         )));
@@ -424,7 +424,7 @@ pub(crate) fn walk_footnote_section(
         // Build <li id="fn-{id}"> content + back_ref </li>.
         let mut li_children = p_content.into_vec();
         li_children.push(back_ref);
-        let li_attrs = with_attributes(vec![create_attribute("id", &format!("fn-{}", id))]);
+        let li_attrs = with_attributes(vec![create_attribute("id", &format!("fn-{id}"))]);
         let li = Node::Element(Box::new(normal_element_with_attrs(
             "li", li_attrs, Nodes::from(li_children),
         )));

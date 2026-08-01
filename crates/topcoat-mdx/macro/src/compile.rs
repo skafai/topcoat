@@ -33,7 +33,7 @@ pub(crate) struct CompiledMdxResult {
     pub(crate) wrapper_path: Option<SynPath>,
     /// Excerpt tokens from the walker when `<!-- more -->` is present.
     /// Contains the view tokens for the content before the excerpt marker,
-    /// produced by a separate ViewWriter.
+    /// produced by a separate `ViewWriter`.
     ///
     /// TODO: Currently computed but not emitted to generated code. The
     /// caller (`compile_mdx!`, `mdx_page!`) only uses `view_tokens`.

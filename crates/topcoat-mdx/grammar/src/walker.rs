@@ -47,8 +47,8 @@ pub struct WalkContext<'a> {
     /// Heading slug counter for duplicate ID handling.
     /// Maps base slug → occurrence count so that "# Hello" followed
     /// by another "# Hello" produces ids "hello" and "hello-1".
-    /// Wrapped in RefCell for interior mutability (same pattern as errors,
-    /// footnote_order).
+    /// Wrapped in `RefCell` for interior mutability (same pattern as errors,
+    /// `footnote_order`).
     pub seen_ids: RefCell<HashMap<String, u32>>,
 }
 
@@ -118,23 +118,21 @@ impl Default for WalkContext<'_> {
 /// Collects link/image definitions and footnote definitions from the root.
 ///
 /// Iterates root children looking for `Definition` and `FootnoteDefinition`
-/// nodes. Definition identifiers are normalized to lowercase per CommonMark
+/// nodes. Definition identifiers are normalized to lowercase per `CommonMark`
 /// case-folding rules. Returns a tuple of `(definitions, footnotes)` where
 /// definitions maps the normalized identifier to `(url, title)` and footnotes
 /// stores `(identifier, children)` pairs.
 ///
-/// Per CommonMark spec, definitions must appear at the document level.
+/// Per `CommonMark` spec, definitions must appear at the document level.
 /// This function only scans direct root children. If the parser places a
 /// definition inside a nested structure (e.g., after a blockquote), it
 /// will be silently missed, causing reference links to fail with
 /// "unknown reference" errors.
 #[must_use]
+#[allow(clippy::type_complexity)]
 pub fn collect_definitions(
     root: &markdown::mdast::Root,
-) -> (
-    HashMap<String, (String, Option<String>)>,
-    Vec<(String, Vec<markdown::mdast::Node>)>,
-) {
+) -> (HashMap<String, (String, Option<String>)>, Vec<(String, Vec<markdown::mdast::Node>)>) {
     let mut definitions = HashMap::new();
     let mut footnotes = Vec::new();
     for node in &root.children {
@@ -266,6 +264,7 @@ pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> N
 }
 
 /// Walks a single mdast node into zero or more view `Node`s.
+#[allow(clippy::match_same_arms)]
 pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
         markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
@@ -298,8 +297,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
                     format!("{base_slug}-{count}")
                 }
             };
-            let mut attrs: Vec<topcoat_view_grammar::attributes::Attribute> = Vec::new();
-            attrs.push(helpers::create_attribute("id", &id_value));
+            let attrs =
+                vec![helpers::create_attribute("id", &id_value)];
             let attributes = helpers::with_attributes(attrs);
             if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
                 vec![jsx::build_override_component(path, &attributes, children, ctx.span)]
@@ -339,9 +338,21 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         // Html nodes are never produced by the parser (html_flow and
         // html_text are disabled in get_parse_options()). MdxjsEsm
         // contains JS expressions that are not Rust-deserializable.
-        // Both return Vec::new() / fall to the wildcard arm.
+        // Definition nodes are declarations only, skip during main walk.
+        // Footnote definitions: skip during main walk, rendered at doc end.
+        // Definition nodes: declarations only, skip during main walk.
+        // Deferred:
+        // - MdxFlowExpression, MdxTextExpression: MDX expressions
+        // Handled elsewhere (not rendered by this walker):
+        // - Html: disabled (never produced by parser), handled by match arm above
+        // - Yaml, Toml: extracted by extract_frontmatter(), skipped in walker
+        // - MdxjsEsm: not rendered (JS expressions, not Rust-deserializable)
+        // - InlineMath, Math: LaTeX math (not enabled in parse options)
+        // - TableRow, TableCell: handled internally by walk_table
         markdown::mdast::Node::Html(_)
-        | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
+        | markdown::mdast::Node::MdxjsEsm(_)
+        | markdown::mdast::Node::Definition(_)
+        | markdown::mdast::Node::FootnoteDefinition(_) => Vec::new(),
         markdown::mdast::Node::Code(c) => vec![node::walk_code_block(ctx, c)],
         markdown::mdast::Node::List(l) => vec![node::walk_list(ctx, l)],
         markdown::mdast::Node::ListItem(li) => vec![node::walk_list_item(ctx, li)],
@@ -369,23 +380,10 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::ImageReference(ir) => {
             vec![node::walk_image_reference(ctx, ir)]
         }
-        // Definition nodes are declarations only, skip during main walk.
-        markdown::mdast::Node::Definition(_) => Vec::new(),
         // Footnote references: emit superscript link, track order.
         markdown::mdast::Node::FootnoteReference(fr) => {
             vec![node::walk_footnote_reference(ctx, fr)]
         }
-        // Footnote definitions: skip during main walk, rendered at doc end.
-        markdown::mdast::Node::FootnoteDefinition(_) => Vec::new(),
-        // Default: skip remaining node types.
-        // Deferred:
-        // - MdxFlowExpression, MdxTextExpression: MDX expressions
-        // Handled elsewhere (not rendered by this walker):
-        // - Html: disabled (never produced by parser), handled by match arm above
-        // - Yaml, Toml: extracted by extract_frontmatter(), skipped in walker
-        // - MdxjsEsm: not rendered (JS expressions, not Rust-deserializable)
-        // - InlineMath, Math: LaTeX math (not enabled in parse options)
-        // - TableRow, TableCell: handled internally by walk_table
         _ => Vec::new(),
     }
 }
@@ -398,17 +396,14 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
 /// `html_flow` and `html_text` are off in `get_parse_options()`, so
 /// `mdast::Html` nodes are never produced by the parser.
 pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, writer: &mut ViewWriter) {
-    match node {
-        markdown::mdast::Node::Text(t) => {
-            // Text content — escaped for HtmlContext::Text.
-            writer.write_text(&t.value);
-        }
-        _ => {
-            // For all other node types, construct view nodes and write them.
-            let view_nodes = walk_node(ctx, node);
-            for vn in view_nodes {
-                vn.write(writer);
-            }
+    if let markdown::mdast::Node::Text(t) = node {
+        // Text content — escaped for HtmlContext::Text.
+        writer.write_text(&t.value);
+    } else {
+        // For all other node types, construct view nodes and write them.
+        let view_nodes = walk_node(ctx, node);
+        for vn in view_nodes {
+            vn.write(writer);
         }
     }
 }
