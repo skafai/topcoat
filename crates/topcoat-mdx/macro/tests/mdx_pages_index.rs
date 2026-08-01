@@ -1,5 +1,3 @@
-use topcoat_mdx_macro::mdx_pages;
-
 // ---- Index emission test ----
 
 // mdx_pages! emits MDX_INDEX_TESTS_FIXTURES_PAGES const and
@@ -108,7 +106,7 @@ mod index_test {
 mod type_test {
     use topcoat::mdx::MdxIndexEntry;
 
-    static TEST_TAGS: &[&'static str] = &["tag1"];
+    static TEST_TAGS: &[&str] = &["tag1"];
 
     #[test]
     fn mdx_index_entry_fields() {
@@ -131,7 +129,7 @@ mod type_test {
 
     #[test]
     fn mdx_index_entry_empty_optional_fields() {
-        static EMPTY_TAGS: &[&'static str] = &[];
+        static EMPTY_TAGS: &[&str] = &[];
         let entry = MdxIndexEntry {
             slug: "minimal",
             path: "/blog/minimal",

@@ -96,12 +96,15 @@ mod overrides_xss_safety {
 // Mock components for expanded override + wrapper tests
 // ---------------------------------------------------------------------------
 
+#[allow(unused_variables)]
+// Mock components accept props the MDX walker passes (`id`, `data_lang`, ...) but
+// only use `child` in their view bodies. The module-level allow suppresses the
+// resulting unused-variable warnings.
 mod mock_all {
     use super::*;
 
     /// Heading override component that adds an anchor class.
     #[component]
-    #[allow(unused_variables)]
     pub async fn heading(id: &'static str, #[default] child: View) -> Result {
         view! {
             <div class="heading-override">
@@ -123,7 +126,6 @@ mod mock_all {
 
     /// Code block override component.
     #[component]
-    #[allow(unused_variables)]
     pub async fn code_block(data_lang: &'static str, #[default] child: View) -> Result {
         view! {
             <div class="code-block-override">
