@@ -560,8 +560,8 @@ mod tests {
 
     #[test]
     fn walk_node_dispatches_mdx_jsx_flow_element() {
-        // markdown-rs only parses <Widget></Widget> as MdxJsxFlowElement.
-        // Self-closing <Widget /> is parsed as raw Html.
+        // With html_flow disabled, markdown-rs parses <Widget></Widget> as
+        // MdxJsxFlowElement. Self-closing <Widget /> also works correctly.
         let component_path: Path = syn::parse_quote!(my::widget);
         let registry = vec![("Widget".to_string(), component_path)];
         let ctx = WalkContext::new(&registry, &[], Span::call_site());
@@ -874,7 +874,6 @@ mod tests {
     }
 
     // ---- Phase 03.2: self-closing JSX tag fix — tracer tests ----
-    // These tests FAIL until html_flow/html_text are disabled in parse.rs.
 
     #[test]
     fn walk_self_closing_jsx_component() {
@@ -905,23 +904,27 @@ mod tests {
 
     #[test]
     fn walk_jsx_with_content_not_html() {
-        // <Widget>text</Widget> should parse as MdxJsxFlowElement (not raw Html)
-        // and produce Node::Component when "Widget" is registered.
+        // <Widget>text</Widget> with content is parsed as Paragraph > MdxJsxTextElement
+        // (not as MdxJsxFlowElement or raw Html). The walker dispatches MdxJsxTextElement
+        // to walk_jsx_text_element which produces Node::Component when registered.
         let component_path: Path = syn::parse_quote!(my::widget);
         let registry = vec![("Widget".to_string(), component_path)];
         let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "<Widget>text</Widget>");
-        assert_eq!(nodes.len(), 1, "JSX with content should produce one node");
-        assert!(
-            matches!(&nodes[0], Node::Component(_)),
-            "<Widget>text</Widget> should produce Node::Component but got non-Component node"
-        );
-        if let Node::Component(comp) = &nodes[0] {
+        assert_eq!(nodes.len(), 1, "JSX with content should produce one root node (paragraph)");
+        // The root node is a <p> wrapping the Component.
+        if let Node::Element(p) = &nodes[0] {
             assert_eq!(
-                comp.path.segments.last().unwrap().ident.to_string(),
-                "widget"
+                p.name().string_name().as_deref(),
+                Some("p"),
+                "root should be a paragraph wrapping the text-level JSX"
             );
-            assert_eq!(comp.children.len(), 1, "should have one child (text)");
+            assert!(
+                p.children().iter().any(|c| matches!(c, Node::Component(_))),
+                "paragraph should contain Node::Component for registered Widget"
+            );
+        } else {
+            panic!("expected paragraph element wrapping JSX text component");
         }
     }
 
@@ -953,10 +956,9 @@ mod tests {
         // End-to-end tracer: parse MDX with a component, walk it, assert
         // the Component node has the correct path, named_args, and children.
         //
-        // Note: markdown-rs only parses empty JSX tag pairs as MdxJsxFlowElement
-        // (e.g. <Callout></Callout>). Tags with content like <Callout>hello</Callout>
-        // are parsed as raw HTML fragments. This is a parser limitation addressed
-        // by integration tests in the macro crate which use .mdx fixture files.
+        // With html_flow disabled, markdown-rs parses JSX tag pairs as
+        // MdxJsxFlowElement (e.g. <Callout type="info"></Callout>).
+        // Self-closing tags like <Callout /> also work correctly.
         let component_path: Path = syn::parse_quote!(components::callout);
         let registry = vec![("Callout".to_string(), component_path)];
         let ctx = WalkContext::new(&registry, &[], Span::call_site());
