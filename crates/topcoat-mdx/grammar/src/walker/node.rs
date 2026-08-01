@@ -250,6 +250,112 @@ pub(crate) fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -
     html_element("del", children)
 }
 
+/// Walks a link reference node: `[text][ref]` resolved from definitions map.
+///
+/// Looks up the normalized identifier in `ctx.definitions`. If found and the
+/// URL passes `is_safe_url()` (T-03.2-02), emits an `<a>` element with href.
+/// If the URL fails `is_safe_url()`, emits `<span>` with text only.
+/// If the definition is not found, pushes an error to `ctx.errors` (D-10).
+pub(crate) fn walk_link_reference(
+    ctx: &WalkContext,
+    link_ref: &markdown::mdast::LinkReference,
+) -> Node {
+    let id = link_ref.identifier.trim().to_lowercase();
+    if let Some((url, title)) = ctx.definitions.get(&id) {
+        // XSS protection: check URL before emitting <a> (T-03.2-02).
+        if !is_safe_url(url) {
+            let children = super::walk_nodes(ctx, &link_ref.children);
+            return html_element("span", children);
+        }
+        let mut attrs = Vec::with_capacity(2);
+        attrs.push(create_attribute("href", url));
+        if let Some(t) = title {
+            attrs.push(create_attribute("title", t));
+        }
+        let attributes = with_attributes(attrs);
+        let children = super::walk_nodes(ctx, &link_ref.children);
+        // Check for override AFTER is_safe_url() passes (XSS protection preserved).
+        if let Some(path) = try_find_override_path(ctx, "a") {
+            return build_override_component(path, &attributes, children, ctx.span);
+        }
+        return Node::Element(Box::new(normal_element_with_attrs(
+            "a", attributes, children,
+        )));
+    }
+    // Unknown reference — emit compile-time error (D-10).
+    ctx.errors.borrow_mut().push(format!(
+        "unknown reference link target: '{}'",
+        link_ref.identifier
+    ));
+    // Render link text as plain inline content.
+    super::walk_nodes(ctx, &link_ref.children).into_vec().into_iter().next().unwrap_or_else(|| {
+        text_node(&link_ref.identifier)
+    })
+}
+
+/// Walks an image reference node: `![alt][ref]` resolved from definitions map.
+///
+/// Looks up the normalized identifier in `ctx.definitions`. If found and the
+/// URL passes `is_safe_url()` (T-03.2-03), emits an `<img>` void element.
+/// If the URL fails `is_safe_url()`, emits `<span>` with alt text only.
+/// If the definition is not found, pushes an error to `ctx.errors` (D-10).
+pub(crate) fn walk_image_reference(
+    ctx: &WalkContext,
+    img_ref: &markdown::mdast::ImageReference,
+) -> Node {
+    let id = img_ref.identifier.trim().to_lowercase();
+    if let Some((url, title)) = ctx.definitions.get(&id) {
+        // XSS protection: check URL before emitting <img> (T-03.2-03).
+        if !is_safe_url(url) {
+            return html_element("span", Nodes::from(vec![text_node(img_ref.alt.as_str())]));
+        }
+        let mut attrs = Vec::with_capacity(3);
+        attrs.push(create_attribute("src", url));
+        attrs.push(create_attribute("alt", img_ref.alt.as_str()));
+        if let Some(t) = title {
+            attrs.push(create_attribute("title", t));
+        }
+        let attributes = with_attributes(attrs);
+        // Check for override before constructing the <img> void element.
+        if let Some(path) = try_find_override_path(ctx, "img") {
+            return build_override_component(path, &attributes, Nodes::new(), ctx.span);
+        }
+        return Node::Element(Box::new(void_element_with_attrs("img", attributes)));
+    }
+    // Unknown reference — emit compile-time error (D-10).
+    ctx.errors.borrow_mut().push(format!(
+        "unknown reference image target: '{}'",
+        img_ref.identifier
+    ));
+    // Render alt text as fallback.
+    html_element("span", Nodes::from(vec![text_node(img_ref.alt.as_str())]))
+}
+
+/// Walks a footnote reference node: `[^id]` rendered as superscript link.
+///
+/// Tracks the identifier in `ctx.footnote_order` if not already present
+/// (GFM first-reference order). Emits `<sup><a href="#fn-{id}">{id}</a></sup>`
+/// as inline content.
+pub(crate) fn walk_footnote_reference(
+    ctx: &WalkContext,
+    foot_ref: &markdown::mdast::FootnoteReference,
+) -> Node {
+    // Track first-reference order for GFM numbering.
+    {
+        let mut order = ctx.footnote_order.borrow_mut();
+        if !order.iter().any(|id| id == &foot_ref.identifier) {
+            order.push(foot_ref.identifier.clone());
+        }
+    }
+    let href = format!("#fn-{}", foot_ref.identifier);
+    let attrs = with_attributes(vec![create_attribute("href", &href)]);
+    let link_text = text_node(&foot_ref.identifier);
+    let a = Node::Element(Box::new(normal_element_with_attrs(
+        "a", attrs, Nodes::from(vec![link_text]),
+    )));
+    html_element("sup", Nodes::from(vec![a]))
+}
+
 /// Renders a footnote section: `<ol>` with footnote items at document end.
 ///
 /// Called after the main walk by `mdx_to_view` when footnotes were referenced.
@@ -974,5 +1080,157 @@ mod tests {
             }
         }
         None
+    }
+
+    // ---- Helper for parsing with two-pass walk (reference links, footnotes) ----
+
+    fn parse_and_walk_full_ctx(ctx: &WalkContext, content: &str) -> Result<topcoat_view_grammar::view::View, markdown::message::Message> {
+        super::super::mdx_to_view(ctx, content)
+    }
+
+    // ---- Reference link tests ----
+
+    #[test]
+    fn reference_link_resolves_to_anchor() {
+        // [text][ref] should resolve to <a href="url">text</a> when Definition exists.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "[click here][example]\n\n[example]: https://example.com",
+        ).expect("should parse");
+        assert!(!view.nodes.is_empty());
+        // The paragraph should contain an <a> element.
+        if let Node::Element(p) = &view.nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            let has_a = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("a")
+                } else {
+                    false
+                }
+            });
+            assert!(has_a, "reference link should resolve to <a> element");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn reference_image_resolves_to_img() {
+        // ![alt][ref] should resolve to <img src="url" alt="alt"> when Definition exists.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "![photo][img-ref]\n\n[img-ref]: photo.png",
+        ).expect("should parse");
+        assert!(!view.nodes.is_empty());
+        // The paragraph should contain an <img> void element.
+        if let Node::Element(p) = &view.nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(has_img, "reference image should resolve to <img> element");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn unknown_ref_emits_error() {
+        // [text][undefined] should push an error to WalkContext.errors.
+        //
+        // Note: markdown-rs resolves reference links at parse time. When a
+        // LinkReference has no matching Definition in the mdast, the parser
+        // renders it as literal text "[click][missing]" instead of a
+        // LinkReference node. The walker only sees LinkReference nodes when
+        // the parser found a matching Definition.
+        //
+        // This test verifies the defensive error path in walk_link_reference:
+        // when a LinkReference node reaches the walker but its normalized id
+        // is not in ctx.definitions (e.g. due to a case mismatch or collection
+        // ordering), an error is emitted and fallback text is rendered.
+        //
+        // We construct a WalkContext with a definitions map missing the
+        // target key to exercise this path.
+        let mut defs = std::collections::HashMap::new();
+        defs.insert("other".to_string(), ("https://other.com".to_string(), None));
+        // "missing" is intentionally not in the map.
+        let ctx = WalkContext::with_maps(
+            &[],
+            &[],
+            proc_macro2::Span::call_site(),
+            defs,
+            Vec::new(),
+        );
+        // Build a LinkReference mdast node manually and walk it.
+        let link_ref = markdown::mdast::LinkReference {
+            children: vec![markdown::mdast::Node::Text(
+                markdown::mdast::Text {
+                    position: None,
+                    value: "click".to_string(),
+                },
+            )],
+            position: None,
+            reference_kind: markdown::mdast::ReferenceKind::Full,
+            identifier: "missing".to_string(),
+            label: None,
+        };
+        let _node = super::walk_link_reference(&ctx, &link_ref);
+        let errors = ctx.errors.borrow();
+        assert!(
+            !errors.is_empty(),
+            "should emit error for unknown reference target, errors: {:?}",
+            *errors
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("missing")),
+            "error should mention the missing identifier: {:?}",
+            *errors
+        );
+    }
+
+    #[test]
+    fn reference_link_blocks_xss() {
+        // Definition URL with javascript: should NOT produce <a>.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "[xss][bad]\n\n[bad]: javascript:alert(1)",
+        ).expect("should parse");
+        assert!(!view.nodes.is_empty());
+        // Should NOT contain an <a> element.
+        if let Node::Element(p) = &view.nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            let has_a = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("a")
+                } else {
+                    false
+                }
+            });
+            assert!(!has_a, "javascript: reference link should NOT produce <a>");
+        }
+    }
+
+    #[test]
+    fn definition_skipped_during_walk() {
+        // Definition nodes should NOT appear as rendered content.
+        let ctx = WalkContext::empty();
+        let view = parse_and_walk_full_ctx(
+            &ctx,
+            "[example]: https://example.com\n\nBody text",
+        ).expect("should parse");
+        // The view should contain only the body text paragraph, not the definition.
+        // The view should have content, but not a rendered definition.
+        assert!(
+            view.nodes.len() <= 1,
+            "definition should not produce extra nodes, got {}",
+            view.nodes.len()
+        );
     }
 }

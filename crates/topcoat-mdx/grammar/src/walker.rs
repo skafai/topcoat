@@ -182,6 +182,8 @@ pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<(String, Fron
 ///
 /// Two-pass walk: first collects `Definition` and `FootnoteDefinition` nodes
 /// from the root, then walks the remaining nodes with the populated maps.
+/// Errors collected during the walk are propagated back into the original
+/// `ctx.errors` so that the caller can access them.
 ///
 /// # Errors
 ///
@@ -212,6 +214,10 @@ pub fn mdx_to_view(
             if !footnote_order.is_empty() {
                 walked.push(node::walk_footnote_section(&ctx_with_maps, &footnote_order));
             }
+            // Propagate errors from the internal walk context back to the caller's context.
+            ctx.errors.borrow_mut().extend(
+                ctx_with_maps.errors.borrow_mut().drain(..)
+            );
             walked.into()
         }
         _ => Nodes::new(),
@@ -297,11 +303,23 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
                 Vec::new()
             }
         }
+        // Reference-style links and images: resolved from definitions map.
+        markdown::mdast::Node::LinkReference(lr) => {
+            vec![node::walk_link_reference(ctx, lr)]
+        }
+        markdown::mdast::Node::ImageReference(ir) => {
+            vec![node::walk_image_reference(ctx, ir)]
+        }
+        // Definition nodes are declarations only, skip during main walk.
+        markdown::mdast::Node::Definition(_) => Vec::new(),
+        // Footnote references: emit superscript link, track order.
+        markdown::mdast::Node::FootnoteReference(fr) => {
+            vec![node::walk_footnote_reference(ctx, fr)]
+        }
+        // Footnote definitions: skip during main walk, rendered at doc end.
+        markdown::mdast::Node::FootnoteDefinition(_) => Vec::new(),
         // Default: skip remaining node types.
-        // Deferred (require additional infrastructure):
-        // - LinkReference, ImageReference: need a definition registry to resolve [ref] targets
-        // - Definition: reference-style link/image declarations
-        // - FootnoteDefinition, FootnoteReference: footnote support
+        // Deferred:
         // - MdxFlowExpression, MdxTextExpression: MDX expressions
         // Handled elsewhere (not rendered by this walker):
         // - Html: disabled (never produced by parser), handled by match arm above
