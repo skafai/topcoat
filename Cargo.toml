@@ -66,6 +66,13 @@ members = [
 
     "demos/coffee-shop",
 
+    "examples/mdx/simple",
+    "examples/mdx/components",
+    "examples/mdx/blog",
+    "examples/mdx/docs-site",
+    "examples/mdx/with-ui",
+    "examples/mdx/discover",
+
     "benchmarks/topcoat",
 ]
 exclude = [

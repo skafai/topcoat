@@ -1,0 +1,11 @@
+[package]
+name = "mdx-discover"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Stub -- replaced by 05-06 plan
+[dependencies]
+
+[lints]
+workspace = true
