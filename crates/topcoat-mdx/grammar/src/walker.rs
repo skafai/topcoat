@@ -7,12 +7,15 @@
 use std::cell::RefCell;
 
 use proc_macro2::Span;
-use syn::{Expr, Ident, LitStr, Path, parse_quote, token::{Colon, Paren}};
+use syn::{
+    Expr, Ident, LitStr, Path, parse_quote,
+    token::{Colon, Paren},
+};
 use topcoat_view_grammar::{
     attributes::{Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes},
     view::{
-        ClosingTag, Component, Element, ElementName, HtmlIdent, NamedArg, NamedArgValue, Node, Nodes,
-        OpeningTag, SelfClosingTag, View, ViewWriter, WriteView,
+        ClosingTag, Component, Element, ElementName, HtmlIdent, NamedArg, NamedArgValue, Node,
+        Nodes, OpeningTag, SelfClosingTag, View, ViewWriter, WriteView,
     },
 };
 
@@ -92,9 +95,7 @@ pub enum FrontmatterFormat {
 /// Note: `MdxjsEsm` frontmatter is not extracted — it contains JavaScript
 /// expressions that are not deserializable as Rust types.
 #[must_use]
-pub fn extract_frontmatter(
-    root: &markdown::mdast::Node,
-) -> Option<(String, FrontmatterFormat)> {
+pub fn extract_frontmatter(root: &markdown::mdast::Node) -> Option<(String, FrontmatterFormat)> {
     let markdown::mdast::Node::Root(r) = root else {
         return None;
     };
@@ -151,7 +152,13 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         }
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
-            vec![html_element(&tag, walk_nodes(ctx, &h.children))]
+            let children = walk_nodes(ctx, &h.children);
+            if has_override(ctx, &tag) {
+                // try_apply_override will succeed here since we checked has_override first.
+                vec![try_apply_override(ctx, &tag, &Attributes::default(), children).unwrap()]
+            } else {
+                vec![html_element(&tag, children)]
+            }
         }
         markdown::mdast::Node::Text(t) => {
             vec![text_node(&t.value)]
@@ -169,22 +176,25 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![html_element("blockquote", walk_nodes(ctx, &b.children))]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
-            vec![Node::Element(Box::new(void_element("hr")))]
+            if has_override(ctx, "hr") {
+                vec![try_apply_override(ctx, "hr", &Attributes::default(), Nodes::new()).unwrap()]
+            } else {
+                vec![Node::Element(Box::new(void_element("hr")))]
+            }
         }
         markdown::mdast::Node::Break(_) => {
             vec![Node::Element(Box::new(void_element("br")))]
         }
         markdown::mdast::Node::Link(l) => vec![walk_link(ctx, l)],
-        markdown::mdast::Node::Image(i) => vec![walk_image(i)],
+        markdown::mdast::Node::Image(i) => vec![walk_image(ctx, i)],
         // Raw HTML cannot be represented in the view! AST without a
         // ViewWriter (which supports write_str_unescaped). Use
         // walk_to_writer for HTML passthrough. It returns Vec::new() like
         // the wildcard arm, which is intentional: Html nodes are skipped
         // here and handled by walk_to_writer instead.
         #[allow(clippy::match_same_arms)]
-        markdown::mdast::Node::Html(_)
-        | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
-        markdown::mdast::Node::Code(c) => vec![walk_code_block(c)],
+        markdown::mdast::Node::Html(_) | markdown::mdast::Node::MdxjsEsm(_) => Vec::new(),
+        markdown::mdast::Node::Code(c) => vec![walk_code_block(ctx, c)],
         markdown::mdast::Node::List(l) => vec![walk_list(ctx, l)],
         markdown::mdast::Node::ListItem(li) => vec![walk_list_item(ctx, li)],
         markdown::mdast::Node::Table(t) => vec![walk_table(ctx, t)],
@@ -297,7 +307,7 @@ fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
 /// Walks an image node: `<img src="url" alt="alt" title="...">`.
 /// Strips dangerous URL schemes (javascript:, vbscript:, data:)
 /// to prevent XSS — renders alt text only without src.
-fn walk_image(image: &markdown::mdast::Image) -> Node {
+fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> Node {
     if !is_safe_url(&image.url) {
         // Strip the src to prevent XSS; render alt text only.
         let children = Nodes::from(vec![text_node(&image.alt)]);
@@ -310,11 +320,15 @@ fn walk_image(image: &markdown::mdast::Image) -> Node {
         attrs.push(create_attribute("title", title));
     }
     let attributes = with_attributes(attrs);
+    // Check for override before constructing the <img> void element.
+    if has_override(ctx, "img") {
+        return try_apply_override(ctx, "img", &attributes, Nodes::new()).unwrap();
+    }
     Node::Element(Box::new(void_element_with_attrs("img", attributes)))
 }
 
 /// Walks a fenced code block: `<pre><code class="language-{lang}">...</code></pre>`.
-fn walk_code_block(code: &markdown::mdast::Code) -> Node {
+fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -> Node {
     let mut attrs = Vec::new();
     if let Some(ref lang) = code.lang {
         attrs.push(create_attribute("class", &format!("language-{lang}")));
@@ -323,6 +337,10 @@ fn walk_code_block(code: &markdown::mdast::Code) -> Node {
     let code_children = Nodes::from(vec![text_node(&code.value)]);
     let code_el = normal_element_with_attrs("code", code_attrs, code_children);
     let pre_children = Nodes::from(vec![Node::Element(Box::new(code_el))]);
+    // Check for override at the <pre> level (outermost element).
+    if has_override(ctx, "pre") {
+        return try_apply_override(ctx, "pre", &Attributes::default(), pre_children).unwrap();
+    }
     html_element("pre", pre_children)
 }
 
@@ -547,19 +565,17 @@ pub fn try_apply_override(
             if let AttributeNode::Attribute(attr) = attr_node
                 && let AttributeKey::Ident(ident) = &attr.key
             {
-                    let name = ident.first.to_string();
-                    let expr: Expr = match &attr.value {
-                        AttributeValue::LitStr(s) => {
-                            coerce_attr_value(&s.value(), ctx.span)
-                        }
-                        AttributeValue::Expr(_) => syn::parse_quote!(true),
-                    };
-                    return Some(NamedArg {
-                        ident: make_ident(&name),
-                        colon: Colon::default(),
-                        value: NamedArgValue::Expr(expr),
-                    });
-                }
+                let name = ident.first.to_string();
+                let expr: Expr = match &attr.value {
+                    AttributeValue::LitStr(s) => coerce_attr_value(&s.value(), ctx.span),
+                    AttributeValue::Expr(_) => syn::parse_quote!(true),
+                };
+                return Some(NamedArg {
+                    ident: make_ident(&name),
+                    colon: Colon::default(),
+                    value: NamedArgValue::Expr(expr),
+                });
+            }
             None
         })
         .collect();
@@ -654,7 +670,9 @@ pub fn walk_jsx_element(
     let path = if let Some((_, p)) = ctx.components.iter().find(|(tag, _)| tag == name) {
         p.clone()
     } else {
-        ctx.errors.borrow_mut().push(format!("unknown component '{name}'"));
+        ctx.errors
+            .borrow_mut()
+            .push(format!("unknown component '{name}'"));
         return None;
     };
 
@@ -687,7 +705,9 @@ pub fn walk_jsx_text_element(
     let path = if let Some((_, p)) = ctx.components.iter().find(|(tag, _)| tag == name) {
         p.clone()
     } else {
-        ctx.errors.borrow_mut().push(format!("unknown component '{name}'"));
+        ctx.errors
+            .borrow_mut()
+            .push(format!("unknown component '{name}'"));
         return None;
     };
 
@@ -850,13 +870,19 @@ mod tests {
     #[test]
     fn extract_frontmatter_none() {
         let root = parse_to_root("# Heading\n\nPlain text");
-        assert!(extract_frontmatter(&root).is_none(), "should return None when no frontmatter");
+        assert!(
+            extract_frontmatter(&root).is_none(),
+            "should return None when no frontmatter"
+        );
     }
 
     #[test]
     fn extract_frontmatter_heading_first() {
         let root = parse_to_root("# heading");
-        assert!(extract_frontmatter(&root).is_none(), "heading-first doc should have no frontmatter");
+        assert!(
+            extract_frontmatter(&root).is_none(),
+            "heading-first doc should have no frontmatter"
+        );
     }
 
     #[test]
@@ -871,9 +897,7 @@ mod tests {
 
     #[test]
     fn extract_frontmatter_toml_present() {
-        let root = parse_to_root(
-            "+++\ntitle = \"Hello\"\ndate = 2024-01-01\n+++\n\n# Body",
-        );
+        let root = parse_to_root("+++\ntitle = \"Hello\"\ndate = 2024-01-01\n+++\n\n# Body");
         let fm = extract_frontmatter(&root);
         assert!(fm.is_some(), "should extract TOML frontmatter");
         let (content, format) = fm.unwrap();
@@ -886,11 +910,12 @@ mod tests {
     fn extract_frontmatter_mdxjs_esm_returns_none() {
         // MdxjsEsm frontmatter is intentionally not extracted since it
         // contains JavaScript expressions, not deserializable data.
-        let root = parse_to_root(
-            "```js\nexport const title = \"Hello\";\n```\n\n# Body",
-        );
+        let root = parse_to_root("```js\nexport const title = \"Hello\";\n```\n\n# Body");
         let fm = extract_frontmatter(&root);
-        assert!(fm.is_none(), "MdxjsEsm should not be extracted as frontmatter");
+        assert!(
+            fm.is_none(),
+            "MdxjsEsm should not be extracted as frontmatter"
+        );
     }
 
     fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
@@ -1916,7 +1941,9 @@ mod tests {
             "should push error for unknown inline component"
         );
         assert!(
-            errors.iter().any(|e| e.contains("unknown component 'Unknown'")),
+            errors
+                .iter()
+                .any(|e| e.contains("unknown component 'Unknown'")),
             "should contain 'unknown component' message. Errors: {:?}",
             *errors
         );
@@ -1928,7 +1955,8 @@ mod tests {
     fn try_apply_override_hits() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
         let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
-        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path.clone())];
+        let overrides: [(&'static str, Path); 1] =
+            [(leaked as &'static str, component_path.clone())];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let attrs = with_attributes(vec![create_attribute("href", "https://example.com")]);
         let children = Nodes::from(vec![text_node("click")]);
@@ -1952,7 +1980,10 @@ mod tests {
         let attrs = with_attributes(vec![create_attribute("src", "photo.png")]);
         let children = Nodes::new();
         let result = try_apply_override(&ctx, "img", &attrs, children);
-        assert!(result.is_none(), "should return None when tag has no override");
+        assert!(
+            result.is_none(),
+            "should return None when tag has no override"
+        );
     }
 
     #[test]
@@ -1975,8 +2006,14 @@ mod tests {
                     false
                 }
             });
-            assert!(has_component, "paragraph should contain Component for overridden link");
-            assert!(!has_a, "paragraph should NOT contain <a> when override is registered");
+            assert!(
+                has_component,
+                "paragraph should contain Component for overridden link"
+            );
+            assert!(
+                !has_a,
+                "paragraph should NOT contain <a> when override is registered"
+            );
         } else {
             panic!("expected paragraph element");
         }
@@ -2005,7 +2042,10 @@ mod tests {
                 !has_component,
                 "javascript: link should NOT produce Component even when override is registered"
             );
-            assert!(has_span, "javascript: link should produce <span> for XSS protection");
+            assert!(
+                has_span,
+                "javascript: link should produce <span> for XSS protection"
+            );
         } else {
             panic!("expected paragraph element");
         }
@@ -2019,6 +2059,143 @@ mod tests {
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         assert_eq!(ctx.overrides.len(), 1);
         assert_eq!(ctx.overrides[0].0, "a");
+    }
+
+    // ---- Phase 03.1 Plan 02: expanded override tests ----
+
+    #[test]
+    fn walk_heading_with_h1_override() {
+        let component_path: Path = syn::parse_quote!(components::heading);
+        let leaked: &'static mut str = Box::leak("h1".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "# Hello");
+        assert_eq!(nodes.len(), 1);
+        // With override, the heading should produce a Component, not an <h1> element.
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "h1 override should produce Node::Component"
+        );
+        if let Node::Component(comp) = &nodes[0] {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "heading"
+            );
+        }
+    }
+
+    #[test]
+    fn walk_heading_without_override_falls_through() {
+        // No h1 override registered; should produce normal <h1>.
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "# Hello");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("h1")),
+            "heading without override should produce <h1>"
+        );
+    }
+
+    #[test]
+    fn walk_image_with_override() {
+        let component_path: Path = syn::parse_quote!(components::picture);
+        let leaked: &'static mut str = Box::leak("img".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "![alt text](photo.png)");
+        // Should be inside a paragraph.
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            // The image should render as a Component, not an <img> void element.
+            let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(has_component, "image override should produce Component");
+            assert!(!has_img, "image override should NOT produce <img>");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn walk_image_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "![alt](photo.png)");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            let has_img = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("img")
+                } else {
+                    false
+                }
+            });
+            assert!(has_img, "image without override should produce <img>");
+        }
+    }
+
+    #[test]
+    fn walk_code_block_with_pre_override() {
+        let component_path: Path = syn::parse_quote!(components::code_block);
+        let leaked: &'static mut str = Box::leak("pre".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "```rust\nfn main() {}\n```");
+        assert_eq!(nodes.len(), 1);
+        // With override, the code block should produce a Component, not <pre>.
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "pre override should produce Node::Component"
+        );
+        if let Node::Component(comp) = &nodes[0] {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "code_block"
+            );
+        }
+    }
+
+    #[test]
+    fn walk_thematic_break_with_hr_override() {
+        let component_path: Path = syn::parse_quote!(components::separator);
+        let leaked: &'static mut str = Box::leak("hr".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        // Use "***" instead of "---" to avoid frontmatter ambiguity.
+        let nodes = parse_and_walk_ctx(&ctx, "\n***\n");
+        assert_eq!(nodes.len(), 1);
+        // With override, the thematic break should produce a Component, not <hr>.
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "hr override should produce Node::Component"
+        );
+        if let Node::Component(comp) = &nodes[0] {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "separator"
+            );
+        }
+    }
+
+    #[test]
+    fn override_not_applied_when_tag_not_registered() {
+        // Only "a" is registered; h1 should fall through to HTML.
+        let link_path: Path = syn::parse_quote!(components::custom_link);
+        let leaked_a: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked_a as &'static str, link_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "# No override here");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("h1")),
+            "unregistered tag should fall through to HTML element"
+        );
     }
 
     // ---- Phase 02: tracer integration test ----
