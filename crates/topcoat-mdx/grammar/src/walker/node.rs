@@ -13,7 +13,7 @@ use super::helpers::{
     create_attribute, create_attribute_bool, html_element, normal_element_with_attrs,
     self_closing_element, text_node, void_element_with_attrs, with_attributes,
 };
-use super::jsx::try_apply_override;
+use super::jsx::{build_override_component, try_find_override_path};
 use super::WalkContext;
 
 // ---------------------------------------------------------------------------
@@ -50,8 +50,8 @@ pub(crate) fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node
     let attributes = with_attributes(attrs);
     let children = super::walk_nodes(ctx, &link.children);
     // Check for override AFTER is_safe_url() passes (XSS protection preserved).
-    if let Some(node) = try_apply_override(ctx, "a", &attributes, children) {
-        return node;
+    if let Some(path) = try_find_override_path(ctx, "a") {
+        return build_override_component(path, &attributes, children, ctx.span);
     }
     Node::Element(Box::new(normal_element_with_attrs(
         "a", attributes, children,
@@ -75,8 +75,8 @@ pub(crate) fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> N
     }
     let attributes = with_attributes(attrs);
     // Check for override before constructing the <img> void element.
-    if let Some(node) = try_apply_override(ctx, "img", &attributes, Nodes::new()) {
-        return node;
+    if let Some(path) = try_find_override_path(ctx, "img") {
+        return build_override_component(path, &attributes, Nodes::new(), ctx.span);
     }
     Node::Element(Box::new(void_element_with_attrs("img", attributes)))
 }
@@ -92,8 +92,8 @@ pub(crate) fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -
     let code_el = normal_element_with_attrs("code", code_attrs, code_children);
     let pre_children = Nodes::from(vec![Node::Element(Box::new(code_el))]);
     // Check for override at the <pre> level (outermost element).
-    if let Some(node) = try_apply_override(ctx, "pre", &Attributes::default(), pre_children) {
-        return node;
+    if let Some(path) = try_find_override_path(ctx, "pre") {
+        return build_override_component(path, &Attributes::default(), pre_children, ctx.span);
     }
     html_element("pre", pre_children)
 }
