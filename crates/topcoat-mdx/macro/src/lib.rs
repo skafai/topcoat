@@ -25,53 +25,18 @@ use topcoat_core_grammar::paths::{
 };
 use topcoat_mdx_grammar::walker::FrontmatterFormat;
 
-use crate::compile::compile_mdx_file;
-use crate::convert::value_to_expr;
-use crate::input::{CompileMdxInput, MdxPageInput, MdxPagesInput};
-use crate::pages::{build_index, derive_route_path, generate_page_registration, scan_directory};
+use crate::{
+    compile::compile_mdx_file,
+    convert::value_to_expr,
+    input::{CompileMdxInput, MdxPageInput, MdxPagesInput},
+    pages::{build_index, derive_route_path, generate_page_registration, scan_directory},
+};
 
 // ---------------------------------------------------------------------------
 // compile_mdx! proc-macro
 // ---------------------------------------------------------------------------
 
-/// Compiles a `.mdx` or `.md` file into a Topcoat `view!` AST.
-///
-/// # Arguments
-///
-/// * `path` - A string literal pointing to the `.mdx` or `.md` file, relative to
-///   `CARGO_MANIFEST_DIR`.
-/// * `components` (optional) - A component registry declared via `mdx_components!{...}`.
-///
-/// # Examples
-///
-/// Without component registry (backward-compatible):
-///
-/// ```ignore
-/// #[page("/blog/post")]
-/// async fn post_page(cx: Cx) -> impl IntoResponse {
-///     view! { cx => compile_mdx!("content/post.mdx") }
-/// }
-/// ```
-///
-/// With component registry (recommended):
-///
-/// ```ignore
-/// #[page("/blog/post")]
-/// async fn post_page(cx: Cx) -> impl IntoResponse {
-///     view! { cx => compile_mdx!(
-///         mdx_components! {
-///             Callout => components::callout,
-///             Divider => components::divider,
-///         },
-///         "content/post.mdx"
-///     ) }
-/// }
-/// ```
-///
-/// # Panics
-/// Panics if `has_wrapper` is true but `wrapper_path` is none — this indicates
-/// a bug in `compile_mdx_file`, which must always set `wrapper_path` when
-/// `has_wrapper` is true.
+#[doc = include_str!("../docs/compile_mdx.md")]
 #[proc_macro]
 pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<CompileMdxInput>(tokens) {
@@ -149,10 +114,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
             .and_then(|s| s.to_str())
             .unwrap_or("MDX")
             .replace('-', "_");
-        let const_name = Ident::new(
-            &format!("__MDX_FRONTMATTER_{file_stem}"),
-            lit_str.span(),
-        );
+        let const_name = Ident::new(&format!("__MDX_FRONTMATTER_{file_stem}"), lit_str.span());
         let yaml_lit = LitStr::new(&content, lit_str.span());
 
         quote! {
@@ -171,32 +133,7 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 // mdx_page! proc-macro
 // ---------------------------------------------------------------------------
 
-/// Registers a `.mdx` or `.md` file as a page route with optional frontmatter.
-///
-/// # Arguments
-///
-/// * `route_path` - The URL path for this page (e.g. `"/blog/hello"`).
-/// * `file_path` - Path to the `.mdx` or `.md` file, relative to `CARGO_MANIFEST_DIR`.
-/// * `frontmatter = Type` (optional) - The Rust type to deserialize the YAML or TOML frontmatter
-///   into.
-///
-/// # Examples
-///
-/// ```ignore
-/// use serde::Deserialize;
-///
-/// #[derive(Deserialize)]
-/// struct BlogMeta {
-///     title: String,
-///     date: String,
-/// }
-///
-/// // Register with frontmatter:
-/// mdx_page!("/blog/hello", "content/hello.mdx", frontmatter = BlogMeta);
-///
-/// // Register without frontmatter:
-/// mdx_page!("/about", "content/about.mdx");
-/// ```
+#[doc = include_str!("../docs/mdx_page.md")]
 #[proc_macro]
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc)]
 pub fn mdx_page(tokens: TokenStream) -> TokenStream {
@@ -345,30 +282,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 // mdx_pages! proc-macro
 // ---------------------------------------------------------------------------
 
-/// Auto-discovers `.mdx` and `.md` files in a directory and registers each as a page route.
-///
-/// # Arguments
-///
-/// * `directory_path` - A string literal pointing to a directory, relative to `CARGO_MANIFEST_DIR`.
-///   All `.mdx` and `.md` files within this directory are scanned.
-/// * `prefix = "/path"` (optional) - A route path prefix prepended to each derived route.
-///
-/// # Examples
-///
-/// ```ignore
-/// // Register all .mdx and .md files under content/blog/ with /blog prefix:
-/// mdx_pages!("content/blog", prefix = "/blog");
-///
-/// // Register without prefix:
-/// mdx_pages!("pages");
-/// ```
-///
-/// Route paths are derived from the file structure:
-/// - `content/blog/hello-world.mdx` -> `/blog/hello-world`
-/// - `content/blog/nested/post.mdx` -> `/blog/nested/post`
-///
-/// The macro also emits a const index array `MDX_INDEX_<DIR>` and an accessor function
-/// `mdx_index_<dir>()` returning `&[MdxIndexEntry]` for content indexing purposes.
+#[doc = include_str!("../docs/mdx_pages.md")]
 #[proc_macro]
 pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<MdxPagesInput>(tokens) {
@@ -454,11 +368,8 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     let route_results: Vec<proc_macro2::TokenStream> = page_entries
         .iter()
         .map(|entry| {
-            let route_path = derive_route_path(
-                &canonical_scan_dir,
-                &entry.file_path,
-                prefix.as_deref(),
-            );
+            let route_path =
+                derive_route_path(&canonical_scan_dir, &entry.file_path, prefix.as_deref());
             match generate_page_registration(
                 &entry.file_path,
                 &route_path,
@@ -482,17 +393,13 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         .replace([std::path::MAIN_SEPARATOR, '/', '-'], "_")
         .to_uppercase();
 
-    let index_const_name = Ident::new(
-        &format!("MDX_INDEX_{index_suffix}"),
-        span,
-    );
-    let index_fn_name = Ident::new(
-        &format!("mdx_index_{}", index_suffix.to_lowercase()),
-        span,
-    );
+    let index_const_name = Ident::new(&format!("MDX_INDEX_{index_suffix}"), span);
+    let index_fn_name = Ident::new(&format!("mdx_index_{}", index_suffix.to_lowercase()), span);
 
     // Combine route results into a single TokenStream.
-    let route_tokens = route_results.into_iter().collect::<proc_macro2::TokenStream>();
+    let route_tokens = route_results
+        .into_iter()
+        .collect::<proc_macro2::TokenStream>();
 
     // Build index const using the collected entries.
     let index_const_tokens = quote! {
