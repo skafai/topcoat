@@ -5,14 +5,16 @@
 //! components replace standard HTML elements.
 
 use proc_macro2::Span;
-use syn::{Expr, LitStr, Path as SynPath, token::{Colon, Paren}};
+use syn::{
+    Expr, LitStr, Path as SynPath,
+    token::{Colon, Paren},
+};
 use topcoat_view_grammar::{
     attributes::{AttributeKey, AttributeNode, AttributeValue, Attributes},
     view::{Component, NamedArg, NamedArgValue, Node, Nodes},
 };
 
-use super::helpers::make_ident;
-use super::WalkContext;
+use super::{WalkContext, helpers::make_ident};
 
 // ---------------------------------------------------------------------------
 // JSX component walking (Phase 02)
@@ -111,7 +113,9 @@ pub(crate) fn try_apply_override(
 /// to pass owned values into the component builder.
 #[inline]
 pub(crate) fn try_find_override_path(ctx: &WalkContext, tag: &str) -> Option<SynPath> {
-    ctx.overrides.iter().find_map(|(t, p)| if *t == tag { Some(p.clone()) } else { None })
+    ctx.overrides
+        .iter()
+        .find_map(|(t, p)| if *t == tag { Some(p.clone()) } else { None })
 }
 
 /// Builds a `Node::Component` from a pre-resolved override path.
@@ -657,7 +661,11 @@ mod tests {
         let overrides: [(&'static str, Path); 1] =
             [(leaked as &'static str, component_path.clone())];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
-        let attrs = super::super::helpers::with_attributes(vec![super::super::helpers::create_attribute("href", "https://example.com")]);
+        let attrs =
+            super::super::helpers::with_attributes(vec![super::super::helpers::create_attribute(
+                "href",
+                "https://example.com",
+            )]);
         let children = Nodes::from(vec![super::super::helpers::text_node("click")]);
         let result = try_apply_override(&ctx, "a", &attrs, children);
         assert!(result.is_some(), "should return Some when tag has override");
@@ -676,7 +684,11 @@ mod tests {
     #[test]
     fn try_apply_override_misses() {
         let ctx = WalkContext::empty_with_overrides(&[]);
-        let attrs = super::super::helpers::with_attributes(vec![super::super::helpers::create_attribute("src", "photo.png")]);
+        let attrs =
+            super::super::helpers::with_attributes(vec![super::super::helpers::create_attribute(
+                "src",
+                "photo.png",
+            )]);
         let children = Nodes::new();
         let result = try_apply_override(&ctx, "img", &attrs, children);
         assert!(
@@ -917,7 +929,10 @@ mod tests {
                 comp.path.segments.last().unwrap().ident.to_string(),
                 "widget"
             );
-            assert!(comp.children.is_empty(), "self-closing should have no children");
+            assert!(
+                comp.children.is_empty(),
+                "self-closing should have no children"
+            );
         }
         // Also verify no errors were pushed.
         assert!(
@@ -935,7 +950,11 @@ mod tests {
         let registry = vec![("Widget".to_string(), component_path)];
         let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "<Widget>text</Widget>");
-        assert_eq!(nodes.len(), 1, "JSX with content should produce one root node (paragraph)");
+        assert_eq!(
+            nodes.len(),
+            1,
+            "JSX with content should produce one root node (paragraph)"
+        );
         // The root node is a <p> wrapping the Component.
         if let Node::Element(p) = &nodes[0] {
             assert_eq!(

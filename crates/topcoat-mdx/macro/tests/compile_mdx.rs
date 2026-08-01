@@ -19,11 +19,23 @@ async fn tracer_renders() {
     let html = view.render(&cx);
 
     // Should render the heading and paragraph.
-    assert!(html.contains("Tracer Test"), "should have h1 text. Got:\n{html}");
-    assert!(html.contains("<strong>bold</strong>"), "should have bold. Got:\n{html}");
-    assert!(html.contains("<em>italic</em>"), "should have italic. Got:\n{html}");
+    assert!(
+        html.contains("Tracer Test"),
+        "should have h1 text. Got:\n{html}"
+    );
+    assert!(
+        html.contains("<strong>bold</strong>"),
+        "should have bold. Got:\n{html}"
+    );
+    assert!(
+        html.contains("<em>italic</em>"),
+        "should have italic. Got:\n{html}"
+    );
     // Blockquote replaced the old raw HTML div.
-    assert!(html.contains("<blockquote>"), "should have blockquote. Got:\n{html}");
+    assert!(
+        html.contains("<blockquote>"),
+        "should have blockquote. Got:\n{html}"
+    );
 }
 
 // ---- CommonMark fixture ----

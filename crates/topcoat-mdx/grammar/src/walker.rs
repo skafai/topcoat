@@ -4,8 +4,7 @@
 //! (`Node`, `Element`, `Nodes`), enabling markdown content to be rendered
 //! through the same code generation pipeline as handwritten templates.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use proc_macro2::Span;
 use syn::Path;
@@ -133,17 +132,17 @@ impl Default for WalkContext<'_> {
 #[allow(clippy::type_complexity)]
 pub fn collect_definitions(
     root: &markdown::mdast::Root,
-) -> (HashMap<String, (String, Option<String>)>, Vec<(String, Vec<markdown::mdast::Node>)>) {
+) -> (
+    HashMap<String, (String, Option<String>)>,
+    Vec<(String, Vec<markdown::mdast::Node>)>,
+) {
     let mut definitions = HashMap::new();
     let mut footnotes = Vec::new();
     for node in &root.children {
         match node {
             markdown::mdast::Node::Definition(d) => {
                 let id = d.identifier.trim().to_lowercase();
-                definitions.insert(
-                    id,
-                    (d.url.clone(), d.title.clone()),
-                );
+                definitions.insert(id, (d.url.clone(), d.title.clone()));
             }
             markdown::mdast::Node::FootnoteDefinition(f) => {
                 footnotes.push((f.identifier.clone(), f.children.clone()));
@@ -227,9 +226,9 @@ pub fn mdx_to_view(
                 walked.push(node::walk_footnote_section(&ctx_with_maps, &footnote_order));
             }
             // Propagate errors from the internal walk context back to the caller's context.
-            ctx.errors.borrow_mut().extend(
-                ctx_with_maps.errors.borrow_mut().drain(..)
-            );
+            ctx.errors
+                .borrow_mut()
+                .extend(ctx_with_maps.errors.borrow_mut().drain(..));
             walked.into()
         }
         _ => Nodes::new(),
@@ -298,11 +297,15 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
                     format!("{base_slug}-{count}")
                 }
             };
-            let attrs =
-                vec![helpers::create_attribute("id", &id_value)];
+            let attrs = vec![helpers::create_attribute("id", &id_value)];
             let attributes = helpers::with_attributes(attrs);
             if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
-                vec![jsx::build_override_component(path, &attributes, children, ctx.span)]
+                vec![jsx::build_override_component(
+                    path,
+                    &attributes,
+                    children,
+                    ctx.span,
+                )]
             } else {
                 vec![Node::Element(Box::new(helpers::normal_element_with_attrs(
                     &tag, attributes, children,
@@ -316,17 +319,31 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![helpers::html_element("em", walk_nodes(ctx, &e.children))]
         }
         markdown::mdast::Node::Strong(s) => {
-            vec![helpers::html_element("strong", walk_nodes(ctx, &s.children))]
+            vec![helpers::html_element(
+                "strong",
+                walk_nodes(ctx, &s.children),
+            )]
         }
         markdown::mdast::Node::InlineCode(c) => {
-            vec![helpers::html_element("code", Nodes::from(vec![helpers::text_node(&c.value)]))]
+            vec![helpers::html_element(
+                "code",
+                Nodes::from(vec![helpers::text_node(&c.value)]),
+            )]
         }
         markdown::mdast::Node::Blockquote(b) => {
-            vec![helpers::html_element("blockquote", walk_nodes(ctx, &b.children))]
+            vec![helpers::html_element(
+                "blockquote",
+                walk_nodes(ctx, &b.children),
+            )]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
             if let Some(path) = jsx::try_find_override_path(ctx, "hr") {
-                vec![jsx::build_override_component(path, &topcoat_view_grammar::attributes::Attributes::default(), Nodes::new(), ctx.span)]
+                vec![jsx::build_override_component(
+                    path,
+                    &topcoat_view_grammar::attributes::Attributes::default(),
+                    Nodes::new(),
+                    ctx.span,
+                )]
             } else {
                 vec![Node::Element(Box::new(helpers::void_element("hr")))]
             }
@@ -459,9 +476,9 @@ pub fn walk_excerpt_to_writer(
 }
 
 // Re-export jsx functions that are part of the public API used by external consumers.
-pub use jsx::coerce_attr_value;
 // Re-export excerpt split detection for the macro crate's two-writer approach.
 pub use helpers::find_excerpt_split;
+pub use jsx::coerce_attr_value;
 
 #[cfg(test)]
 mod tests {
@@ -547,7 +564,9 @@ mod tests {
         };
         let (definitions, _) = collect_definitions(&r);
         assert_eq!(definitions.len(), 1, "should find one definition");
-        let entry = definitions.get("example").expect("should have 'example' key");
+        let entry = definitions
+            .get("example")
+            .expect("should have 'example' key");
         assert_eq!(entry.0, "https://example.com", "should store URL");
         assert_eq!(entry.1, Some("Example".to_string()), "should store title");
     }

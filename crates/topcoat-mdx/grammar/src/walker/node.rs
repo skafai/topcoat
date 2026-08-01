@@ -6,13 +6,15 @@
 
 use topcoat_view_grammar::view::{Node, Nodes};
 
-use super::helpers::{
-    create_attribute, create_attribute_bool, create_attribute_data, html_element,
-    normal_element_with_attrs, parse_code_meta, self_closing_element, text_node,
-    void_element_with_attrs, with_attributes,
+use super::{
+    WalkContext,
+    helpers::{
+        create_attribute, create_attribute_bool, create_attribute_data, html_element,
+        normal_element_with_attrs, parse_code_meta, self_closing_element, text_node,
+        void_element_with_attrs, with_attributes,
+    },
+    jsx::{build_override_component, try_find_override_path},
 };
-use super::jsx::{build_override_component, try_find_override_path};
-use super::WalkContext;
 
 // ---------------------------------------------------------------------------
 // Node-specific walkers
@@ -121,7 +123,9 @@ pub(crate) fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -
         return build_override_component(path, &pre_attributes, pre_children, ctx.span);
     }
     Node::Element(Box::new(normal_element_with_attrs(
-        "pre", pre_attributes, pre_children,
+        "pre",
+        pre_attributes,
+        pre_children,
     )))
 }
 
@@ -383,7 +387,9 @@ pub(crate) fn walk_footnote_reference(
     let attrs = with_attributes(vec![create_attribute("href", &href)]);
     let link_text = text_node(&foot_ref.identifier);
     let a = Node::Element(Box::new(normal_element_with_attrs(
-        "a", attrs, Nodes::from(vec![link_text]),
+        "a",
+        attrs,
+        Nodes::from(vec![link_text]),
     )));
     html_element("sup", Nodes::from(vec![a]))
 }
@@ -393,10 +399,7 @@ pub(crate) fn walk_footnote_reference(
 /// Called after the main walk by `mdx_to_view` when footnotes were referenced.
 /// Each `<li>` contains the footnote definition content with a back-reference link.
 /// Numbering follows first-reference order per GFM spec.
-pub(crate) fn walk_footnote_section(
-    ctx: &WalkContext,
-    footnote_order: &[String],
-) -> Node {
+pub(crate) fn walk_footnote_section(ctx: &WalkContext, footnote_order: &[String]) -> Node {
     let mut li_nodes = Vec::new();
     for id in footnote_order {
         // Find the footnote definition content.
@@ -411,7 +414,9 @@ pub(crate) fn walk_footnote_section(
         let back_ref_attrs = with_attributes(vec![create_attribute("href", &back_ref_href)]);
         let back_ref_text = text_node(id);
         let back_ref = Node::Element(Box::new(normal_element_with_attrs(
-            "a", back_ref_attrs, Nodes::from(vec![back_ref_text]),
+            "a",
+            back_ref_attrs,
+            Nodes::from(vec![back_ref_text]),
         )));
         // Wrap content in <p> if not already a paragraph-like node.
         let p_content = if content.len() == 1
@@ -426,7 +431,9 @@ pub(crate) fn walk_footnote_section(
         li_children.push(back_ref);
         let li_attrs = with_attributes(vec![create_attribute("id", &format!("fn-{id}"))]);
         let li = Node::Element(Box::new(normal_element_with_attrs(
-            "li", li_attrs, Nodes::from(li_children),
+            "li",
+            li_attrs,
+            Nodes::from(li_children),
         )));
         li_nodes.push(li);
     }
@@ -435,9 +442,10 @@ pub(crate) fn walk_footnote_section(
 
 #[cfg(test)]
 mod tests {
+    use topcoat_view_grammar::view::Element as ViewElement;
+
     use super::*;
     use crate::parse::get_parse_options;
-    use topcoat_view_grammar::view::Element as ViewElement;
 
     fn parse_and_walk(content: &str) -> Nodes {
         parse_and_walk_ctx(&WalkContext::empty(), content)
@@ -1100,7 +1108,9 @@ mod tests {
     fn code_meta_emits_data_attributes() {
         // ```rust {1,3} title="file.rs" should emit data-lang, data-lines, data-title on <pre>
         let ctx = WalkContext::empty();
-        let view = super::super::mdx_to_view(&ctx, "```rust {1,3} title=\"file.rs\"\nfn main() {}\n```").expect("should parse");
+        let view =
+            super::super::mdx_to_view(&ctx, "```rust {1,3} title=\"file.rs\"\nfn main() {}\n```")
+                .expect("should parse");
         assert!(!view.nodes.is_empty());
         let pre = view.nodes.iter().find_map(|n| {
             if let Node::Element(e) = n {
@@ -1115,16 +1125,29 @@ mod tests {
         let data_lang = find_attr_value(pre, "data-lang");
         let data_lines = find_attr_value(pre, "data-lines");
         let data_title = find_attr_value(pre, "data-title");
-        assert_eq!(data_lang, Some("rust".to_string()), "should have data-lang=\"rust\"");
-        assert_eq!(data_lines, Some("1,3".to_string()), "should have data-lines=\"1,3\"");
-        assert_eq!(data_title, Some("file.rs".to_string()), "should have data-title=\"file.rs\"");
+        assert_eq!(
+            data_lang,
+            Some("rust".to_string()),
+            "should have data-lang=\"rust\""
+        );
+        assert_eq!(
+            data_lines,
+            Some("1,3".to_string()),
+            "should have data-lines=\"1,3\""
+        );
+        assert_eq!(
+            data_title,
+            Some("file.rs".to_string()),
+            "should have data-title=\"file.rs\""
+        );
     }
 
     #[test]
     fn code_meta_language_only() {
         // ```python should emit only data-lang
         let ctx = WalkContext::empty();
-        let view = super::super::mdx_to_view(&ctx, "```python\nprint()\n```").expect("should parse");
+        let view =
+            super::super::mdx_to_view(&ctx, "```python\nprint()\n```").expect("should parse");
         let pre = view.nodes.iter().find_map(|n| {
             if let Node::Element(e) = n {
                 if e.name().string_name().as_deref() == Some("pre") {
@@ -1155,14 +1178,18 @@ mod tests {
         assert!(pre.is_some(), "should have pre element");
         let pre = pre.unwrap();
         let data_lang = find_attr_value(pre, "data-lang");
-        assert!(data_lang.is_none(), "should have no data-lang when no language");
+        assert!(
+            data_lang.is_none(),
+            "should have no data-lang when no language"
+        );
     }
 
     #[test]
     fn code_meta_emphasis() {
         // ```bash /sudo/ should emit data-emphasis on <pre>
         let ctx = WalkContext::empty();
-        let view = super::super::mdx_to_view(&ctx, "```bash /sudo/\necho hi\n```").expect("should parse");
+        let view =
+            super::super::mdx_to_view(&ctx, "```bash /sudo/\necho hi\n```").expect("should parse");
         let pre = view.nodes.iter().find_map(|n| {
             if let Node::Element(e) = n {
                 if e.name().string_name().as_deref() == Some("pre") {
@@ -1174,7 +1201,11 @@ mod tests {
         assert!(pre.is_some(), "should have pre element");
         let pre = pre.unwrap();
         let data_emphasis = find_attr_value(pre, "data-emphasis");
-        assert_eq!(data_emphasis, Some("sudo".to_string()), "should have data-emphasis=\"sudo\"");
+        assert_eq!(
+            data_emphasis,
+            Some("sudo".to_string()),
+            "should have data-emphasis=\"sudo\""
+        );
     }
 
     // ---- Heading ID tests ----
@@ -1184,13 +1215,19 @@ mod tests {
         for item in &element.attributes().items {
             if let topcoat_view_grammar::attributes::AttributeNode::Attribute(attr) = item {
                 // Build the full attribute key name (handles hyphenated keys like data-lang).
-                let key_name = if let topcoat_view_grammar::attributes::AttributeKey::Ident(id) = &attr.key {
-                    let rest_parts: Vec<String> = id.rest.iter().map(|seg| {
-                        match &seg.part {
+                let key_name = if let topcoat_view_grammar::attributes::AttributeKey::Ident(id) =
+                    &attr.key
+                {
+                    let rest_parts: Vec<String> = id
+                        .rest
+                        .iter()
+                        .map(|seg| match &seg.part {
                             topcoat_view_grammar::view::HtmlIdentPart::Ident(i) => i.to_string(),
-                            topcoat_view_grammar::view::HtmlIdentPart::Int(lit) => lit.base10_parse::<u64>().unwrap_or(0).to_string(),
-                        }
-                    }).collect();
+                            topcoat_view_grammar::view::HtmlIdentPart::Int(lit) => {
+                                lit.base10_parse::<u64>().unwrap_or(0).to_string()
+                            }
+                        })
+                        .collect();
                     let full = if rest_parts.is_empty() {
                         id.first.to_string()
                     } else {
@@ -1201,7 +1238,9 @@ mod tests {
                     continue;
                 };
                 if key_name == name {
-                    if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) = &attr.value {
+                    if let topcoat_view_grammar::attributes::AttributeValue::LitStr(lit) =
+                        &attr.value
+                    {
                         return Some(lit.value());
                     }
                 }
@@ -1228,7 +1267,11 @@ mod tests {
         assert!(h1.is_some(), "should have h1 element");
         let h1 = h1.unwrap();
         let id_value = find_attr_value(h1, "id");
-        assert_eq!(id_value, Some("hello".to_string()), "heading should have id=\"hello\"");
+        assert_eq!(
+            id_value,
+            Some("hello".to_string()),
+            "heading should have id=\"hello\""
+        );
     }
 
     #[test]
@@ -1236,19 +1279,31 @@ mod tests {
         // Two "# Hello" headings should produce id="hello" and id="hello-1"
         let ctx = WalkContext::empty();
         let view = super::super::mdx_to_view(&ctx, "# Hello\n\n# Hello").expect("should parse");
-        let h1s: Vec<_> = view.nodes.iter().filter_map(|n| {
-            if let Node::Element(e) = n {
-                if e.name().string_name().as_deref() == Some("h1") {
-                    return Some(e.as_ref());
+        let h1s: Vec<_> = view
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let Node::Element(e) = n {
+                    if e.name().string_name().as_deref() == Some("h1") {
+                        return Some(e.as_ref());
+                    }
                 }
-            }
-            None
-        }).collect();
+                None
+            })
+            .collect();
         assert_eq!(h1s.len(), 2, "should have two h1 elements");
         let id1 = find_attr_value(h1s[0], "id");
         let id2 = find_attr_value(h1s[1], "id");
-        assert_eq!(id1, Some("hello".to_string()), "first heading should have id=\"hello\"");
-        assert_eq!(id2, Some("hello-1".to_string()), "second heading should have id=\"hello-1\"");
+        assert_eq!(
+            id1,
+            Some("hello".to_string()),
+            "first heading should have id=\"hello\""
+        );
+        assert_eq!(
+            id2,
+            Some("hello-1".to_string()),
+            "second heading should have id=\"hello-1\""
+        );
     }
 
     // ---- Helper for recursive element finding ----
@@ -1269,7 +1324,10 @@ mod tests {
 
     // ---- Helper for parsing with two-pass walk (reference links, footnotes) ----
 
-    fn parse_and_walk_full_ctx(ctx: &WalkContext, content: &str) -> Result<topcoat_view_grammar::view::View, markdown::message::Message> {
+    fn parse_and_walk_full_ctx(
+        ctx: &WalkContext,
+        content: &str,
+    ) -> Result<topcoat_view_grammar::view::View, markdown::message::Message> {
         super::super::mdx_to_view(ctx, content)
     }
 
@@ -1282,7 +1340,8 @@ mod tests {
         let view = parse_and_walk_full_ctx(
             &ctx,
             "[click here][example]\n\n[example]: https://example.com",
-        ).expect("should parse");
+        )
+        .expect("should parse");
         assert!(!view.nodes.is_empty());
         // The paragraph should contain an <a> element.
         if let Node::Element(p) = &view.nodes[0] {
@@ -1304,10 +1363,8 @@ mod tests {
     fn reference_image_resolves_to_img() {
         // ![alt][ref] should resolve to <img src="url" alt="alt"> when Definition exists.
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "![photo][img-ref]\n\n[img-ref]: photo.png",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "![photo][img-ref]\n\n[img-ref]: photo.png")
+            .expect("should parse");
         assert!(!view.nodes.is_empty());
         // The paragraph should contain an <img> void element.
         if let Node::Element(p) = &view.nodes[0] {
@@ -1345,21 +1402,14 @@ mod tests {
         let mut defs = std::collections::HashMap::new();
         defs.insert("other".to_string(), ("https://other.com".to_string(), None));
         // "missing" is intentionally not in the map.
-        let ctx = WalkContext::with_maps(
-            &[],
-            &[],
-            proc_macro2::Span::call_site(),
-            defs,
-            Vec::new(),
-        );
+        let ctx =
+            WalkContext::with_maps(&[], &[], proc_macro2::Span::call_site(), defs, Vec::new());
         // Build a LinkReference mdast node manually and walk it.
         let link_ref = markdown::mdast::LinkReference {
-            children: vec![markdown::mdast::Node::Text(
-                markdown::mdast::Text {
-                    position: None,
-                    value: "click".to_string(),
-                },
-            )],
+            children: vec![markdown::mdast::Node::Text(markdown::mdast::Text {
+                position: None,
+                value: "click".to_string(),
+            })],
             position: None,
             reference_kind: markdown::mdast::ReferenceKind::Full,
             identifier: "missing".to_string(),
@@ -1383,10 +1433,8 @@ mod tests {
     fn reference_link_blocks_xss() {
         // Definition URL with javascript: should NOT produce <a>.
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "[xss][bad]\n\n[bad]: javascript:alert(1)",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "[xss][bad]\n\n[bad]: javascript:alert(1)")
+            .expect("should parse");
         assert!(!view.nodes.is_empty());
         // Should NOT contain an <a> element.
         if let Node::Element(p) = &view.nodes[0] {
@@ -1406,10 +1454,8 @@ mod tests {
     fn definition_skipped_during_walk() {
         // Definition nodes should NOT appear as rendered content.
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "[example]: https://example.com\n\nBody text",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "[example]: https://example.com\n\nBody text")
+            .expect("should parse");
         // The view should contain only the body text paragraph, not the definition.
         // The view should have content, but not a rendered definition.
         assert!(
@@ -1425,10 +1471,8 @@ mod tests {
     fn footnote_reference_renders_as_superscript() {
         // [^1] should render as <sup><a href="#fn-1">1</a></sup>
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "See note[^1].\n\n[^1]: This is a footnote.",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "See note[^1].\n\n[^1]: This is a footnote.")
+            .expect("should parse");
         // The paragraph should contain a <sup> element.
         assert!(!view.nodes.is_empty());
         let has_sup = view.nodes.iter().any(|n| {
@@ -1452,10 +1496,8 @@ mod tests {
     fn footnote_section_at_document_end() {
         // Footnote definitions should render as <ol> at document end.
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "See note[^1].\n\n[^1]: This is a footnote.",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "See note[^1].\n\n[^1]: This is a footnote.")
+            .expect("should parse");
         // The view should contain an <ol> with footnote items.
         let has_ol = view.nodes.iter().any(|n| {
             if let Node::Element(e) = n {
@@ -1464,7 +1506,10 @@ mod tests {
                 false
             }
         });
-        assert!(has_ol, "footnote section should render as <ol> at document end");
+        assert!(
+            has_ol,
+            "footnote section should render as <ol> at document end"
+        );
     }
 
     #[test]
@@ -1472,10 +1517,8 @@ mod tests {
         // FootnoteDefinition nodes should not appear as rendered content
         // in the main walk (only in the document-end <ol> section).
         let ctx = WalkContext::empty();
-        let view = parse_and_walk_full_ctx(
-            &ctx,
-            "Body text.\n\n[^1]: Footnote content.",
-        ).expect("should parse");
+        let view = parse_and_walk_full_ctx(&ctx, "Body text.\n\n[^1]: Footnote content.")
+            .expect("should parse");
         // Only body paragraph should appear (no footnote content inline).
         // Since no FootnoteReference is used, there should be no <ol> section.
         assert!(

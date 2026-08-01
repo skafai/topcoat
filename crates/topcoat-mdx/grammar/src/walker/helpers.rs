@@ -6,8 +6,8 @@ use syn::{Ident, LitStr, parse_quote};
 use topcoat_view_grammar::{
     attributes::{Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes},
     view::{
-        ClosingTag, Element, ElementName, HtmlIdent, HtmlIdentPart, HtmlIdentSeparator,
-        HtmlIdentSegment, Node, Nodes, OpeningTag, SelfClosingTag,
+        ClosingTag, Element, ElementName, HtmlIdent, HtmlIdentPart, HtmlIdentSegment,
+        HtmlIdentSeparator, Node, Nodes, OpeningTag, SelfClosingTag,
     },
 };
 
@@ -27,9 +27,11 @@ pub(crate) fn text_node(content: &str) -> Node {
 /// Panics if `name` is empty or starts with a digit, because those inputs
 /// produce unhelpful panics inside `Ident::new`.
 pub(crate) fn make_ident(name: &str) -> Ident {
-    assert!(!name.is_empty(),
+    assert!(
+        !name.is_empty(),
         "make_ident: identifier cannot be empty \
-        (source: attribute or tag name)");
+        (source: attribute or tag name)"
+    );
     syn::parse_str(name).unwrap_or_else(|_| Ident::new(name, Span::call_site()))
 }
 
@@ -207,8 +209,12 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
         for token in meta.split_whitespace() {
             if token.starts_with('{') && token.ends_with('}') {
                 lines.push(token[1..token.len() - 1].to_string());
-            } else if let Some(t) = token.strip_prefix("title=\"").and_then(|s| s.strip_suffix('"'))
-                .or(token.strip_prefix("title='").and_then(|s| s.strip_suffix('\'')))
+            } else if let Some(t) = token
+                .strip_prefix("title=\"")
+                .and_then(|s| s.strip_suffix('"'))
+                .or(token
+                    .strip_prefix("title='")
+                    .and_then(|s| s.strip_suffix('\'')))
             {
                 title = Some(t.to_string());
             } else if token.starts_with('/') && token.ends_with('/') && token.len() > 1 {
@@ -219,7 +225,11 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
 
     CodeMeta {
         lang,
-        lines: if lines.is_empty() { None } else { Some(lines.join(",")) },
+        lines: if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join(","))
+        },
         title,
         emphasis,
     }
@@ -229,10 +239,10 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
 /// `<!-- more -->` excerpt marker appears.
 ///
 /// Scans `children` sequentially. For each child:
-/// - If it is a `Text` node whose value contains `<!-- more -->`, the split
-///   is immediately after that node.
-/// - If it is a `Paragraph`, inspects its inline children for a `Text` node
-///   containing `<!-- more -->`. The split is after the paragraph.
+/// - If it is a `Text` node whose value contains `<!-- more -->`, the split is immediately after
+///   that node.
+/// - If it is a `Paragraph`, inspects its inline children for a `Text` node containing `<!-- more
+///   -->`. The split is after the paragraph.
 /// - Otherwise, the node is part of the excerpt.
 ///
 /// # Limitations
@@ -290,7 +300,10 @@ mod tests {
 
     #[test]
     fn slugify_multiple_words() {
-        assert_eq!(slugify("Setup and Configuration"), "setup-and-configuration");
+        assert_eq!(
+            slugify("Setup and Configuration"),
+            "setup-and-configuration"
+        );
     }
 
     #[test]
@@ -380,7 +393,10 @@ mod tests {
             value: "sudo apt install".to_string(),
         };
         let meta = parse_code_meta(&code);
-        assert_eq!(meta.emphasis, vec!["sudo".to_string(), "password".to_string()]);
+        assert_eq!(
+            meta.emphasis,
+            vec!["sudo".to_string(), "password".to_string()]
+        );
     }
 
     #[test]
@@ -451,7 +467,11 @@ mod tests {
             make_paragraph(vec![make_text_node("Body paragraph")]),
         ];
         let split = super::find_excerpt_split(&children);
-        assert_eq!(split, Some(2), "should split after the paragraph containing the marker");
+        assert_eq!(
+            split,
+            Some(2),
+            "should split after the paragraph containing the marker"
+        );
     }
 
     #[test]
@@ -466,21 +486,23 @@ mod tests {
 
     #[test]
     fn excerpt_split_at_end() {
-        let children = vec![
-            make_text_node("Excerpt"),
-            make_text_node("<!-- more -->"),
-        ];
+        let children = vec![make_text_node("Excerpt"), make_text_node("<!-- more -->")];
         let split = super::find_excerpt_split(&children);
-        assert_eq!(split, Some(2), "should split after last node when marker is at end");
+        assert_eq!(
+            split,
+            Some(2),
+            "should split after last node when marker is at end"
+        );
     }
 
     #[test]
     fn excerpt_split_at_start() {
-        let children = vec![
-            make_text_node("<!-- more -->"),
-            make_text_node("Body only"),
-        ];
+        let children = vec![make_text_node("<!-- more -->"), make_text_node("Body only")];
         let split = super::find_excerpt_split(&children);
-        assert_eq!(split, Some(1), "should split after first node when marker is at start");
+        assert_eq!(
+            split,
+            Some(1),
+            "should split after first node when marker is at start"
+        );
     }
 }
