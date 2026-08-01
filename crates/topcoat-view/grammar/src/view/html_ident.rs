@@ -14,7 +14,7 @@ use topcoat_core_grammar::ParseOption;
 /// or `.` with no intervening whitespace. Covers names like `data-foo`,
 /// `aria-label`, `xmlns:xlink`, or `class.active` that are valid in HTML but
 /// not valid Rust identifiers.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HtmlIdent {
     pub first: Ident,
     pub rest: Vec<HtmlIdentSegment>,
@@ -93,14 +93,14 @@ impl HtmlIdent {
 }
 
 /// A trailing `<sep><part>` segment of an [`HtmlIdent`].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HtmlIdentSegment {
     pub separator: HtmlIdentSeparator,
     pub part: HtmlIdentPart,
 }
 
 /// The character joining two segments of an [`HtmlIdent`].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HtmlIdentSeparator {
     Dash(Token![-]),
     Colon(Token![:]),
@@ -130,7 +130,7 @@ impl HtmlIdentSeparator {
 /// identifier, but HTML attribute names may also carry a bare number such as
 /// Alpine AJAX's `x-target.422` status-code modifiers -- including wildcard
 /// forms like `4xx` -- which are not valid Rust identifiers.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HtmlIdentPart {
     Ident(Ident),
     Int(LitInt),
