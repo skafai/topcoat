@@ -210,7 +210,9 @@ pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
         for token in meta.split_whitespace() {
             if token.starts_with('{') && token.ends_with('}') {
                 lines.push(token[1..token.len() - 1].to_string());
-            } else if let Some(t) = token.strip_prefix("title=\"").and_then(|s| s.strip_suffix('"')) {
+            } else if let Some(t) = token.strip_prefix("title=\"").and_then(|s| s.strip_suffix('"'))
+                .or(token.strip_prefix("title='").and_then(|s| s.strip_suffix('\'')))
+            {
                 title = Some(t.to_string());
             } else if token.starts_with('/') && token.ends_with('/') && token.len() > 1 {
                 emphasis.push(token[1..token.len() - 1].to_string());
