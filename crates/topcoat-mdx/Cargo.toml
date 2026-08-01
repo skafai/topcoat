@@ -12,10 +12,6 @@ rust-version.workspace = true
 
 [dependencies]
 topcoat-mdx-macro.workspace = true
-topcoat-core.workspace = true
-topcoat-router.workspace = true
-serde.workspace = true
-anyhow.workspace = true
 
 [dev-dependencies]
 topcoat = { workspace = true, features = ["mdx"] }
