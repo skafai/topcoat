@@ -1629,6 +1629,11 @@ dependencies = [
 [[package]]
 name = "mdx-discover"
 version = "0.5.0"
+dependencies = [
+ "tokio",
+ "topcoat",
+ "topcoat-mdx",
+]
 
 [[package]]
 name = "mdx-docs-site"
@@ -1645,10 +1650,6 @@ dependencies = [
  "tokio",
  "topcoat",
 ]
-
-[[package]]
-name = "mdx-with-ui"
-version = "0.5.0"
 
 [[package]]
 name = "memchr"
