@@ -622,7 +622,8 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         let file_stem = Path::new(&path_str)
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("MDX");
+            .unwrap_or("MDX")
+            .replace('-', "_");
         let const_name = Ident::new(
             &format!("__MDX_FRONTMATTER_{}", file_stem.to_uppercase()),
             lit_str.span(),
@@ -723,7 +724,8 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let file_stem = Path::new(&path_str)
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("page");
+        .unwrap_or("page")
+        .replace('-', "_");
     let render_fn_name = Ident::new(&format!("__mdx_render_{file_stem}"), file_path.span());
     let unit_name = Ident::new(&format!("__mdx_page_{file_stem}"), file_path.span());
 
