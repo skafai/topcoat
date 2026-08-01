@@ -61,13 +61,11 @@ pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
 
 /// Tries to apply an HTML element override from the `WalkContext`.
 ///
-/// Returns `Some(Node::Component)` when `tag` is registered in `ctx.overrides`,
-/// emitting a component node with the given attributes converted to named
-/// props and the provided children.
-///
-/// Returns `None` when no override is registered for `tag`, letting the
-/// caller construct the standard HTML element.
-pub fn try_apply_override(
+/// Production code uses `try_find_override_path` + `build_override_component`
+/// to avoid consuming children when no override is registered. This function
+/// exists solely for unit tests that need a single-call variant.
+#[cfg(test)]
+pub(crate) fn try_apply_override(
     ctx: &WalkContext,
     tag: &str,
     attributes: &Attributes,
@@ -631,7 +629,7 @@ mod tests {
     #[test]
     fn try_apply_override_hits() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
-        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("a".to_string());
         let overrides: [(&'static str, Path); 1] =
             [(leaked as &'static str, component_path.clone())];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
@@ -666,7 +664,7 @@ mod tests {
     #[test]
     fn walk_link_with_override() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
-        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("a".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "[link](https://example.com)");
@@ -697,9 +695,9 @@ mod tests {
     }
 
     #[test]
-    fn walk_link_override_preserves_xss() {
+    fn walk_link_override_blocks_xss() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
-        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("a".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "[xss](javascript:alert(1))");
@@ -731,7 +729,7 @@ mod tests {
     #[test]
     fn walk_context_with_overrides() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
-        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("a".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         assert_eq!(ctx.overrides.len(), 1);
@@ -743,7 +741,7 @@ mod tests {
     #[test]
     fn walk_heading_with_h1_override() {
         let component_path: Path = syn::parse_quote!(components::heading);
-        let leaked: &'static mut str = Box::leak("h1".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("h1".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "# Hello");
@@ -776,7 +774,7 @@ mod tests {
     #[test]
     fn walk_image_with_override() {
         let component_path: Path = syn::parse_quote!(components::picture);
-        let leaked: &'static mut str = Box::leak("img".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("img".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "![alt text](photo.png)");
@@ -820,7 +818,7 @@ mod tests {
     #[test]
     fn walk_code_block_with_pre_override() {
         let component_path: Path = syn::parse_quote!(components::code_block);
-        let leaked: &'static mut str = Box::leak("pre".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("pre".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "```rust\nfn main() {}\n```");
@@ -841,7 +839,7 @@ mod tests {
     #[test]
     fn walk_thematic_break_with_hr_override() {
         let component_path: Path = syn::parse_quote!(components::separator);
-        let leaked: &'static mut str = Box::leak("hr".to_string().into_boxed_str());
+        let leaked: &'static mut str = String::leak("hr".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         // Use "***" instead of "---" to avoid frontmatter ambiguity.
@@ -864,7 +862,7 @@ mod tests {
     fn override_not_applied_when_tag_not_registered() {
         // Only "a" is registered; h1 should fall through to HTML.
         let link_path: Path = syn::parse_quote!(components::custom_link);
-        let leaked_a: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let leaked_a: &'static mut str = String::leak("a".to_string());
         let overrides: [(&'static str, Path); 1] = [(leaked_a as &'static str, link_path)];
         let ctx = WalkContext::new(&[], &overrides, Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "# No override here");
