@@ -25,6 +25,24 @@ pub struct MdxComponentMapping {
     pub path: &'static str,
 }
 
+/// An index entry for a single `.mdx` or `.md` page discovered by `mdx_pages!`.
+///
+/// Used to build structured indexes (blog listings, sitemaps, tag pages) from
+/// MDX frontmatter and file path metadata at compile time.
+#[derive(Debug, Clone)]
+pub struct MdxIndexEntry {
+    /// The kebab-cased route slug derived from the file path stem.
+    pub slug: &'static str,
+    /// The `title` field from frontmatter, if present.
+    pub title: Option<&'static str>,
+    /// The `date` field from frontmatter, if present.
+    pub date: Option<&'static str>,
+    /// The `excerpt` field from frontmatter, if present.
+    pub excerpt: Option<&'static str>,
+    /// The `tags` field from frontmatter as a slice of strings, empty if absent.
+    pub tags: &'static [&'static str],
+}
+
 /// An HTML element override entry for the MDX override inventory.
 ///
 /// Submitted by override declarations when the `discover` feature is enabled,
