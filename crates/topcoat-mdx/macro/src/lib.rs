@@ -38,6 +38,7 @@ use crate::{
 
 #[doc = include_str!("../docs/compile_mdx.md")]
 #[proc_macro]
+#[allow(clippy::missing_panics_doc)]
 pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
     let input = match syn::parse::<CompileMdxInput>(tokens) {
         Ok(i) => i,
