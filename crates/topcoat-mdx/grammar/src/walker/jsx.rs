@@ -293,10 +293,6 @@ mod tests {
     use super::*;
     use crate::parse::get_parse_options;
 
-    fn parse_and_walk(content: &str) -> Nodes {
-        parse_and_walk_ctx(&WalkContext::empty(), content)
-    }
-
     fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
         let options = get_parse_options();
         let root = markdown::to_mdast(content, &options).unwrap();

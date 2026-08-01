@@ -271,15 +271,6 @@ mod tests {
         markdown::to_mdast(content, &options).expect("should parse valid markdown")
     }
 
-    fn parse_and_walk_ctx(ctx: &WalkContext, content: &str) -> Nodes {
-        let options = get_parse_options();
-        let root = markdown::to_mdast(content, &options).unwrap();
-        match root {
-            markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children),
-            _ => unreachable!(),
-        }
-    }
-
     // ---- Frontmatter extraction tests ----
 
     #[test]
@@ -393,10 +384,5 @@ mod tests {
         assert!(result.is_ok());
         let view = result.unwrap();
         assert!(!view.nodes.is_empty());
-    }
-
-    // ---- parse_and_walk_ctx is used by jsx and node tests via super::super ----
-    pub(crate) fn parse_and_walk(content: &str) -> Nodes {
-        parse_and_walk_ctx(&WalkContext::empty(), content)
     }
 }
