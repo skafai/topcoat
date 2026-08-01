@@ -4,8 +4,9 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
-# Stub -- replaced by 05-02 plan
 [dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+topcoat = { workspace = true, features = ["mdx", "serve", "view", "router"] }
 
 [lints]
 workspace = true
