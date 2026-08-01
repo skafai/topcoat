@@ -19,7 +19,7 @@ The parser enables the GitHub-flavored markdown extensions on top of CommonMark.
 
 ## Strikethrough and autolinks
 
-Text can be ~~struck through~~, and a bare URL such as https://github.com/topcoat-rs/topcoat becomes a link on its own.
+Text can be ~~struck through~~, and a bare URL such as https://github.com/tokio-rs/topcoat becomes a link on its own.
 
 ## Footnotes
 
@@ -49,6 +49,6 @@ topcoat = { version = "0.5.0", features = ["mdx"] }
 
 ## Reference links
 
-Definitions can live anywhere in the file and are resolved at compile time. An unknown reference is a compile error rather than a broken link, so [the docs][docs] cannot rot silently.
+Definitions can live anywhere in the file and are resolved at compile time, so [the docs][docs] renders as a link with no runtime lookup. A reference with no matching definition stays literal text, exactly as CommonMark specifies.
 
 [docs]: https://docs.rs/topcoat "Topcoat on docs.rs"
