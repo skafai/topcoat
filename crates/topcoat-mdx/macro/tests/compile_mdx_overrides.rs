@@ -310,8 +310,9 @@ mod wrapper {
 // ---------------------------------------------------------------------------
 
 mod mdx_page_components {
-    use super::*;
     use topcoat::mdx::mdx_page;
+
+    use super::*;
 
     #[component]
     async fn callout_with_var(var: &'static str, #[default] child: View) -> Result {

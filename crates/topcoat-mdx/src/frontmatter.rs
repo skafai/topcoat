@@ -8,7 +8,11 @@ use std::ops::Deref;
 
 use anyhow::anyhow;
 use topcoat_core::{context::Cx, error::Result};
-use topcoat_router::{Body, error::internal_server_error, request::{extensions, FromRequest}};
+use topcoat_router::{
+    Body,
+    error::internal_server_error,
+    request::{FromRequest, extensions},
+};
 
 /// Zero-cost request extractor for MDX page frontmatter.
 ///
