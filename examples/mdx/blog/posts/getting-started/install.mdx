@@ -1,0 +1,18 @@
+# Installation Guide
+
+## Add to your project
+
+First, add `topcoat` with the `mdx` feature to your `Cargo.toml`:
+
+```toml
+[dependencies]
+topcoat = { features = ["mdx", "router", "view"] }
+```
+
+## Write your first MDX page
+
+Create a `pages/` directory and add a `.mdx` file with your content.
+
+## Compile and serve
+
+Use the `compile_mdx!` macro in a page handler to render it.
