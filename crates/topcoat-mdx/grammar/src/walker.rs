@@ -275,8 +275,14 @@ pub fn walk_to_writer(ctx: &WalkContext, node: &markdown::mdast::Node, builder: 
 /// Checks if a URL uses a dangerous protocol (XSS mitigation, T-01-01).
 /// Blocks `javascript:`, `vbscript:`, and ALL `data:` URIs (including
 /// `data:image/svg+xml` which can execute JS via SVG event handlers).
+///
+/// Null bytes (`\u{0000}`) are stripped before the scheme check, because
+/// `trim_start()` does not remove them and modern browsers ignore null bytes
+/// in URL schemes during parsing (e.g., `"\x00javascript:"` resolves to
+/// `javascript:`).
 fn is_safe_url(url: &str) -> bool {
-    let trimmed = url.trim_start().to_ascii_lowercase();
+    let cleaned: String = url.chars().filter(|c| *c != '\u{0000}').collect();
+    let trimmed = cleaned.trim().to_ascii_lowercase();
     !trimmed.starts_with("javascript:")
         && !trimmed.starts_with("vbscript:")
         && !trimmed.starts_with("data:")
@@ -1142,6 +1148,15 @@ mod tests {
         assert!(!is_safe_url("javascript:alert(1)"));
         assert!(!is_safe_url("  javascript:alert(1)"));
         assert!(!is_safe_url("JavaScript:alert(1)"));
+    }
+
+    #[test]
+    fn is_safe_url_blocks_null_byte_bypass() {
+        // Null bytes before the scheme would bypass trim_start().
+        assert!(!is_safe_url("\x00javascript:alert(1)"));
+        assert!(!is_safe_url("java\x00script:alert(1)"));
+        assert!(!is_safe_url("\x00\x00vbscript:msgBox(1)"));
+        assert!(!is_safe_url("\x00data:text/html,<script>"));
     }
 
     #[test]
