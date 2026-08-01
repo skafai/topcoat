@@ -1,7 +1,7 @@
 use topcoat::{
     Result,
     context::Cx,
-    router::{layout, module_router, page},
+    router::{layout, module_router, page, RouterBuilderDiscoverExt},
     view::view,
 };
 
@@ -15,7 +15,7 @@ async fn main() {
 // --- Router ------------------------------------------------------------------
 
 pub fn router() -> topcoat::router::Router {
-    module_router!().build()
+    module_router!().discover().build()
 }
 
 // --- Layout ------------------------------------------------------------------
