@@ -20,7 +20,7 @@ use super::{
 // Node-specific walkers
 // ---------------------------------------------------------------------------
 
-/// Checks if a URL uses a dangerous protocol (XSS mitigation, T-01-01).
+/// Checks if a URL uses a dangerous protocol (XSS mitigation).
 /// Blocks `javascript:`, `vbscript:`, and ALL `data:` URIs (including
 /// `data:image/svg+xml` which can execute JS via SVG event handlers).
 pub(crate) fn is_safe_url(url: &str) -> bool {
@@ -37,7 +37,7 @@ pub(crate) fn is_safe_url(url: &str) -> bool {
 pub(crate) fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     if !is_safe_url(&link.url) {
         // Strip the href to prevent XSS; render link text only.
-        // T-03.1-01: is_safe_url() check runs BEFORE try_apply_override()
+        // is_safe_url() check runs BEFORE try_apply_override()
         // so dangerous URLs never route through the override component.
         let children = super::walk_nodes(ctx, &link.children);
         return html_element("span", children);
@@ -85,7 +85,7 @@ pub(crate) fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> N
 ///
 /// Parses the code block's meta string (language, line ranges, title, emphasis)
 /// and attaches them as `data-*` attributes on the `<pre>` element for
-/// downstream syntax highlighting components (Phase C).
+/// downstream syntax highlighting components.
 pub(crate) fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -> Node {
     let meta = parse_code_meta(code);
 
@@ -284,16 +284,16 @@ pub(crate) fn walk_delete(ctx: &WalkContext, delete: &markdown::mdast::Delete) -
 /// Walks a link reference node: `[text][ref]` resolved from definitions map.
 ///
 /// Looks up the normalized identifier in `ctx.definitions`. If found and the
-/// URL passes `is_safe_url()` (T-03.2-02), emits an `<a>` element with href.
+/// URL passes `is_safe_url()`, emits an `<a>` element with href.
 /// If the URL fails `is_safe_url()`, emits `<span>` with text only.
-/// If the definition is not found, pushes an error to `ctx.errors` (D-10).
+/// If the definition is not found, pushes an error to `ctx.errors`.
 pub(crate) fn walk_link_reference(
     ctx: &WalkContext,
     link_ref: &markdown::mdast::LinkReference,
 ) -> Node {
     let id = link_ref.identifier.trim().to_lowercase();
     if let Some((url, title)) = ctx.definitions.get(&id) {
-        // XSS protection: check URL before emitting <a> (T-03.2-02).
+        // XSS protection: check URL before emitting <a>.
         if !is_safe_url(url) {
             let children = super::walk_nodes(ctx, &link_ref.children);
             return html_element("span", children);
@@ -313,13 +313,13 @@ pub(crate) fn walk_link_reference(
             "a", attributes, children,
         )));
     }
-    // Unknown reference — emit compile-time error (D-10).
+    // Unknown reference — emit compile-time error.
     ctx.errors.borrow_mut().push(format!(
         "unknown reference link target: '{}'",
         link_ref.identifier
     ));
     // Render all link children as plain inline content, wrapped in a <span>
-    // to preserve them (CR-02). Falls back to the identifier text if there
+    // to preserve them. Falls back to the identifier text if there
     // are no children.
     let walked = super::walk_nodes(ctx, &link_ref.children);
     if walked.is_empty() {
@@ -332,16 +332,16 @@ pub(crate) fn walk_link_reference(
 /// Walks an image reference node: `![alt][ref]` resolved from definitions map.
 ///
 /// Looks up the normalized identifier in `ctx.definitions`. If found and the
-/// URL passes `is_safe_url()` (T-03.2-03), emits an `<img>` void element.
+/// URL passes `is_safe_url()`, emits an `<img>` void element.
 /// If the URL fails `is_safe_url()`, emits `<span>` with alt text only.
-/// If the definition is not found, pushes an error to `ctx.errors` (D-10).
+/// If the definition is not found, pushes an error to `ctx.errors`.
 pub(crate) fn walk_image_reference(
     ctx: &WalkContext,
     img_ref: &markdown::mdast::ImageReference,
 ) -> Node {
     let id = img_ref.identifier.trim().to_lowercase();
     if let Some((url, title)) = ctx.definitions.get(&id) {
-        // XSS protection: check URL before emitting <img> (T-03.2-03).
+        // XSS protection: check URL before emitting <img>.
         if !is_safe_url(url) {
             return html_element("span", Nodes::from(vec![text_node(img_ref.alt.as_str())]));
         }
@@ -358,7 +358,7 @@ pub(crate) fn walk_image_reference(
         }
         return Node::Element(Box::new(void_element_with_attrs("img", attributes)));
     }
-    // Unknown reference — emit compile-time error (D-10).
+    // Unknown reference — emit compile-time error.
     ctx.errors.borrow_mut().push(format!(
         "unknown reference image target: '{}'",
         img_ref.identifier

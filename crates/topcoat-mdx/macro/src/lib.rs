@@ -343,7 +343,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     };
 
     // Security: verify scan directory stays within manifest directory before
-    // enumeration (T-03.1-04). Per-file guards at line ~1106 catch escaping
+    // enumeration. Per-file guards at line ~1106 catch escaping
     // entries, but rejecting the whole directory avoids unnecessary traversal,
     // prevents external file paths from leaking through diagnostics, and
     // matches compile_mdx_file which validates before reading.
@@ -351,7 +351,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         return syn::Error::new(
             span,
             format!(
-                "mdx_pages! scan directory '{dir_str}' resolves outside CARGO_MANIFEST_DIR (T-03.1-04)"
+                "mdx_pages! scan directory '{dir_str}' resolves outside CARGO_MANIFEST_DIR"
             ),
         )
         .to_compile_error()

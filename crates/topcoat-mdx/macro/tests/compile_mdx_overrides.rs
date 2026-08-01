@@ -73,7 +73,7 @@ mod overrides_xss_safety {
     use super::*;
 
     /// Verify that javascript: URLs are NOT routed through the override
-    /// component even when one is registered — XSS protection (T-03.1-01).
+    /// component even when one is registered — XSS protection.
     #[tokio::test]
     async fn dangerous_url_not_overridden() {
         let cx = CxTestBuilder::new().build();

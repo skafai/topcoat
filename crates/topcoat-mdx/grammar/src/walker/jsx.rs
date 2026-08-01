@@ -17,12 +17,12 @@ use topcoat_view_grammar::{
 use super::{WalkContext, helpers::make_ident};
 
 // ---------------------------------------------------------------------------
-// JSX component walking (Phase 02)
+// JSX component walking
 // ---------------------------------------------------------------------------
 
 /// Smart-coerce an MDX attribute string to a typed Rust literal.
 ///
-/// D-02: `"true"` / `"false"` -> bool, pure integers -> `LitInt`,
+/// `"true"` / `"false"` -> bool, pure integers -> `LitInt`,
 /// pure floats -> `LitFloat`, everything else -> `LitStr`.
 /// Leading-zero digit strings (e.g. `"007"`) stay as strings because
 /// `syn::LitInt` rejects them.
@@ -186,10 +186,10 @@ fn html_ident_to_string(ident: &topcoat_view_grammar::view::HtmlIdent) -> String
 
 /// Walk JSX attributes from an mdast element into `NamedArg`s.
 ///
-/// - Bare attributes (value: None) -> `true` (D-03).
-/// - Literal attributes -> `coerce_attr_value` (D-02).
-/// - Expression attributes (`{...spread}`) -> skipped (Pitfall 7).
-/// - Namespaced attribute names -> pushed to `ctx.errors` (L-02).
+/// - Bare attributes (value: None) -> `true`.
+/// - Literal attributes -> `coerce_attr_value`.
+/// - Expression attributes (`{...spread}`) -> skipped.
+/// - Namespaced attribute names -> pushed to `ctx.errors`.
 pub(crate) fn walk_jsx_attributes(
     ctx: &WalkContext,
     attrs: &[markdown::mdast::AttributeContent],
@@ -198,7 +198,7 @@ pub(crate) fn walk_jsx_attributes(
         .iter()
         .filter_map(|content| match content {
             markdown::mdast::AttributeContent::Property(attr) => {
-                // Skip namespaced attribute names (e.g. xml:lang) — L-02.
+                // Skip namespaced attribute names (e.g. xml:lang).
                 if attr.name.contains(':') {
                     ctx.errors.borrow_mut().push(format!(
                         "namespaced attribute '{}' not supported",
@@ -210,7 +210,7 @@ pub(crate) fn walk_jsx_attributes(
                     Some(markdown::mdast::AttributeValue::Literal(s)) => {
                         coerce_attr_value(s, ctx.span)
                     }
-                    None => syn::parse_quote!(true), // bare attribute → true (D-03)
+                    None => syn::parse_quote!(true), // bare attribute → true
                     Some(markdown::mdast::AttributeValue::Expression(_)) => {
                         // Expression attributes like `{value}` are out of scope.
                         ctx.errors.borrow_mut().push(format!(
@@ -227,7 +227,7 @@ pub(crate) fn walk_jsx_attributes(
                 })
             }
             markdown::mdast::AttributeContent::Expression(_) => {
-                // Spread attributes like `{...props}` are out of scope — Pitfall 7.
+                // Spread attributes like `{...props}` are out of scope.
                 ctx.errors
                     .borrow_mut()
                     .push("spread attributes not supported".to_string());
@@ -241,22 +241,22 @@ pub(crate) fn walk_jsx_attributes(
 ///
 /// Returns `Some` when the element name is `PascalCase` and registered in
 /// `ctx.components`. Returns `None` for:
-/// - Lowercase names (HTML elements, not components — Pitfall 2).
-/// - Fragments (`name: None` — Pitfall 8).
-/// - Unregistered `PascalCase` names (pushes error to `ctx.errors` — D-04).
+/// - Lowercase names (HTML elements, not components).
+/// - Fragments (`name: None`).
+/// - Unregistered `PascalCase` names (pushes error to `ctx.errors`).
 pub fn walk_jsx_element(
     ctx: &WalkContext,
     element: &markdown::mdast::MdxJsxFlowElement,
 ) -> Option<Node> {
     let name = element.name.as_deref()?;
-    // Fragments (name: None) handled by the `?` above — Pitfall 8.
+    // Fragments (name: None) handled by the `?` above.
 
-    // Lowercase = HTML element, not a component — Pitfall 2.
+    // Lowercase = HTML element, not a component.
     if !name.starts_with(char::is_uppercase) {
         return None;
     }
 
-    // Look up in component registry — D-04.
+    // Look up in component registry.
     let path = if let Some((_, p)) = ctx.components.iter().find(|(tag, _)| tag == name) {
         p.clone()
     } else {
@@ -328,7 +328,7 @@ mod tests {
         }
     }
 
-    // ---- Phase 02: coerce_attr_value tests ----
+    // ---- coerce_attr_value tests ----
 
     #[test]
     fn coerce_attr_value_bool_true() {
@@ -415,7 +415,7 @@ mod tests {
         );
     }
 
-    // ---- Phase 02: JSX attribute walking tests ----
+    // ---- JSX attribute walking tests ----
 
     #[test]
     fn walk_jsx_attributes_bare() {
@@ -479,7 +479,7 @@ mod tests {
         );
     }
 
-    // ---- Phase 02: JSX element walking tests ----
+    // ---- JSX element walking tests ----
 
     #[test]
     fn walk_jsx_element_unknown_component() {
@@ -584,7 +584,7 @@ mod tests {
         }
     }
 
-    // ---- Phase 02: walk_node JSX dispatch tests ----
+    // ---- walk_node JSX dispatch tests ----
 
     #[test]
     fn walk_node_dispatches_mdx_jsx_flow_element() {
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_text_element_unknown_component_pushes_error() {
-        // CR-01: inline text-level components must report errors for unknown
+        // Inline text-level components must report errors for unknown
         // PascalCase names, matching flow-level walk_jsx_element behavior.
         let ctx = WalkContext::new(&[], &[], Span::call_site());
         let element = markdown::mdast::MdxJsxTextElement {
@@ -652,7 +652,7 @@ mod tests {
         );
     }
 
-    // ---- Phase 03.1: override mechanism tests ----
+    // ---- override mechanism tests ----
 
     #[test]
     fn try_apply_override_hits() {
@@ -772,7 +772,7 @@ mod tests {
         assert_eq!(ctx.overrides[0].0, "a");
     }
 
-    // ---- Phase 03.1 Plan 02: expanded override tests ----
+    // ---- expanded override tests ----
 
     #[test]
     fn walk_heading_with_h1_override() {
@@ -909,7 +909,7 @@ mod tests {
         );
     }
 
-    // ---- Phase 03.2: self-closing JSX tag fix — tracer tests ----
+    // ---- self-closing JSX tag fix — tracer tests ----
 
     #[test]
     fn walk_self_closing_jsx_component() {
@@ -992,7 +992,7 @@ mod tests {
         );
     }
 
-    // ---- Phase 02: tracer integration test ----
+    // ---- tracer integration test ----
 
     #[test]
     fn tracer_component_round_trip() {

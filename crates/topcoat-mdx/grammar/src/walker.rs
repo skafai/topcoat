@@ -25,7 +25,7 @@ pub struct WalkContext<'a> {
     /// When a tag is registered here, the walker emits a `Node::Component`
     /// instead of a `Node::Element` for that tag.
     pub overrides: &'a [(&'static str, Path)],
-    /// Error strings collected during walking. The macro layer (Plan 02)
+    /// Error strings collected during walking. The macro layer
     /// drains this buffer and converts each entry into a `syn::Error`.
     pub errors: RefCell<Vec<String>>,
     /// Span to use for generated literals. Prefer the span from the
@@ -164,7 +164,7 @@ pub enum FrontmatterFormat {
 
 /// Extracts YAML or TOML frontmatter from the mdast root node.
 ///
-/// Only the first child of the root can be frontmatter (Pitfall 1: YAML
+/// Only the first child of the root can be frontmatter (YAML
 /// frontmatter must appear at byte offset 0 in the source document).
 /// Returns `Some((value_string, format))` when a `Node::Yaml` or `Node::Toml`
 /// is the first root child, `None` otherwise.
@@ -375,7 +375,7 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::ListItem(li) => vec![node::walk_list_item(ctx, li)],
         markdown::mdast::Node::Table(t) => vec![node::walk_table(ctx, t)],
         markdown::mdast::Node::Delete(d) => vec![node::walk_delete(ctx, d)],
-        // MDX JSX component elements — Phase 02.
+        // MDX JSX component elements.
         markdown::mdast::Node::MdxJsxFlowElement(el) => {
             if let Some(comp_node) = jsx::walk_jsx_element(ctx, el) {
                 vec![comp_node]
