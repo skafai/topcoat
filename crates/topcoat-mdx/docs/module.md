@@ -28,7 +28,7 @@ The `compile_mdx!` macro resolves file paths relative to `CARGO_MANIFEST_DIR`. T
 
 # Syntax Support
 
-Topcoat MDX uses `markdown-rs` as its parser, which supports CommonMark and the following GFM extensions:
+Topcoat MDX uses `markdown-rs` as its parser, which supports `CommonMark` and the following GFM extensions:
 
 - Tables
 - Strikethrough
