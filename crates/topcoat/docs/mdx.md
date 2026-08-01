@@ -109,11 +109,13 @@ Files with the `.mdx` extension support embedded component tags. Files with the 
 
 # Discover
 
-When the `discover` feature is enabled on the `topcoat-mdx` crate, `mdx_components!` automatically submits each mapping to a global inventory. Use `Router::builder().discover()` to pick up component registrations along with pages registered by `mdx_page!` and `mdx_pages!`.
+`mdx_page!` and `mdx_pages!` register each file as a page route in the link-time inventory. Enable the `discover` feature and call `Router::builder().discover()` to mount them, so adding a file to a scanned directory is enough to publish a route.
 
 ```toml
-topcoat = { version = "0.5.0", features = ["mdx-discover"] }
+topcoat = { version = "0.5.0", features = ["mdx", "discover"] }
 ```
+
+Component registries are read from the macro invocation at compile time, so they are declared per call rather than globally.
 
 # Macro Reference
 

@@ -43,20 +43,14 @@ Files with the `.mdx` extension allow embedded component tags. Files with the `.
 
 Use `mdx_components!` to declare a registry of component mappings. Each entry pairs an identifier with a Rust component path. When the parser encounters `<Callout>` in an `.mdx` file, it renders the mapped component.
 
-```rust,ignore
+```text
 mdx_components! {
     Callout => components::callout,
     Divider => components::divider,
 }
 ```
 
-Pass the registry as the first argument to `compile_mdx!`. See the [`mdx_components!`] reference for syntax details, props, children, and self-closing tag support.
-
-Components registered via `mdx_components!` can also be discovered automatically when the `discover` feature is enabled on the `topcoat-mdx` crate. Register the feature and use `Router::builder().discover()` to pick them up:
-
-```toml
-topcoat = { version = "0.5.0", features = ["mdx-discover"] }
-```
+Pass the registry as the first argument to `compile_mdx!`. The macro reads it as tokens at compile time, so each file declares the components it uses. See the [`mdx_components!`] reference for syntax details, props, children, and self-closing tag support.
 
 # Frontmatter
 

@@ -89,7 +89,7 @@ mdx_pages!(
 );
 ```
 
-When the `discover` feature is enabled, pages also inherit mappings from the global `mdx_components!` inventory.
+The registry applies to every page in the scan, so a component used by several files is declared once.
 
 ## Shared overrides
 

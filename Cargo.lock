@@ -1627,16 +1627,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "mdx-discover"
+name = "mdx-docs-site"
 version = "0.5.0"
 dependencies = [
  "tokio",
  "topcoat",
- "topcoat-mdx",
 ]
 
 [[package]]
-name = "mdx-docs-site"
+name = "mdx-pages"
 version = "0.5.0"
 dependencies = [
  "tokio",
@@ -3250,7 +3249,6 @@ name = "topcoat-mdx"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "inventory",
  "serde",
  "topcoat",
  "topcoat-core",

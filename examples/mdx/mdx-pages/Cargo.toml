@@ -1,5 +1,5 @@
 [package]
-name = "mdx-discover"
+name = "mdx-pages"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -7,7 +7,6 @@ publish = false
 [dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 topcoat = { workspace = true, features = ["mdx", "serve", "view", "router", "discover"] }
-topcoat-mdx = { workspace = true, features = ["discover"] }
 
 [lints]
 workspace = true

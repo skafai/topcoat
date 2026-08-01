@@ -60,7 +60,7 @@ compile_mdx!(
 )
 ```
 
-When the `discover` feature is enabled on `topcoat-mdx`, `mdx_components!` also submits each mapping to a global inventory. See [`mdx_components!`][] for details.
+The registry is read as tokens at compile time, so it must appear in the invocation itself. See [`mdx_components!`][] for details.
 
 ## With overrides
 
