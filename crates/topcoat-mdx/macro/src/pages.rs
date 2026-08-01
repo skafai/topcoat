@@ -12,8 +12,7 @@ use topcoat_mdx_grammar::{
     walker::{FrontmatterFormat, extract_frontmatter},
 };
 
-use crate::compile::parse_and_walk_mdx;
-use crate::convert::value_to_expr;
+use crate::{compile::parse_and_walk_mdx, convert::value_to_expr};
 
 // ---------------------------------------------------------------------------
 // mdx_pages! helpers
@@ -97,7 +96,9 @@ pub(crate) fn scan_directory(
         }
 
         // Security: verify resolved path stays within manifest directory (T-03-04).
-        let resolved_path = file_path.canonicalize().unwrap_or_else(|_| file_path.clone());
+        let resolved_path = file_path
+            .canonicalize()
+            .unwrap_or_else(|_| file_path.clone());
         if !resolved_path.starts_with(canonical_manifest) {
             continue;
         }
@@ -112,22 +113,24 @@ pub(crate) fn scan_directory(
 ///
 /// For each page, extracts title/date/tags/excerpt from frontmatter
 /// using generic `serde_value::Value` parsing.
-pub(crate) fn build_index(
-    entries: &[MdxPageEntry],
-    _span: Span,
-) -> Vec<proc_macro2::TokenStream> {
+pub(crate) fn build_index(entries: &[MdxPageEntry], _span: Span) -> Vec<proc_macro2::TokenStream> {
     let mut index_items = Vec::new();
 
     for entry in entries {
-        let resolved = entry.file_path.canonicalize().unwrap_or_else(|_| {
-            entry.file_path.clone()
-        });
+        let resolved = entry
+            .file_path
+            .canonicalize()
+            .unwrap_or_else(|_| entry.file_path.clone());
 
-        let Ok(content) = std::fs::read_to_string(&resolved) else { continue };
+        let Ok(content) = std::fs::read_to_string(&resolved) else {
+            continue;
+        };
 
         // Parse the markdown content.
         let options = get_parse_options();
-        let Ok(root) = markdown::to_mdast(&content, &options) else { continue };
+        let Ok(root) = markdown::to_mdast(&content, &options) else {
+            continue;
+        };
 
         // Extract frontmatter data.
         let frontmatter = extract_frontmatter(&root);
@@ -143,38 +146,42 @@ pub(crate) fn build_index(
         let slug_str: &'static str = Box::leak(slug.into_boxed_str());
 
         // Extract known fields from frontmatter using generic deserialization.
-        let (title_expr, date_expr, excerpt_expr, tags_expr) =
-            if let Some((fm_content, format)) = &frontmatter {
-                let deserialized: serde_value::Value =
-                    if matches!(format, FrontmatterFormat::Yaml) {
-                        serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
-                            panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
-                        })
-                    } else {
-                        toml::from_str(fm_content).unwrap_or_else(|e| {
-                            panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
-                        })
-                    };
-
-                let title = extract_string_field(&deserialized, "title");
-                let date = extract_string_field(&deserialized, "date");
-                let excerpt = extract_string_field(&deserialized, "excerpt");
-                let tags = extract_tags_field(&deserialized);
-
-                (
-                    title.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
-                    date.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
-                    excerpt.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
-                    tags,
-                )
+        let (title_expr, date_expr, excerpt_expr, tags_expr) = if let Some((fm_content, format)) =
+            &frontmatter
+        {
+            let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
+                serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
+                    panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
+                })
             } else {
-                (
-                    quote! { None },
-                    quote! { None },
-                    quote! { None },
-                    quote! { &[] },
-                )
+                toml::from_str(fm_content).unwrap_or_else(|e| {
+                    panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
+                })
             };
+
+            let title = extract_string_field(&deserialized, "title");
+            let date = extract_string_field(&deserialized, "date");
+            let excerpt = extract_string_field(&deserialized, "excerpt");
+            let tags = extract_tags_field(&deserialized);
+
+            (
+                title
+                    .map(|s| quote! { Some(#s) })
+                    .unwrap_or(quote! { None }),
+                date.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                excerpt
+                    .map(|s| quote! { Some(#s) })
+                    .unwrap_or(quote! { None }),
+                tags,
+            )
+        } else {
+            (
+                quote! { None },
+                quote! { None },
+                quote! { None },
+                quote! { &[] },
+            )
+        };
 
         index_items.push(quote! {
             #topcoat_mdx::MdxIndexEntry {
@@ -193,7 +200,8 @@ pub(crate) fn build_index(
 /// Extract a string field from a `serde_value::Value` Map.
 fn extract_string_field(value: &serde_value::Value, field: &str) -> Option<LitStr> {
     if let serde_value::Value::Map(entries) = value
-        && let Some(serde_value::Value::String(s)) = entries.get(&serde_value::Value::String(field.to_string()))
+        && let Some(serde_value::Value::String(s)) =
+            entries.get(&serde_value::Value::String(field.to_string()))
     {
         Some(LitStr::new(s, Span::call_site()))
     } else {

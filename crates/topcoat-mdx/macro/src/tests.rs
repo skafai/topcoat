@@ -86,9 +86,7 @@ fn value_to_expr_char() {
 #[test]
 fn value_to_expr_option_none() {
     let expr = v2e(&serde_value::Value::Option(None)).unwrap();
-    assert!(
-        matches!(expr, syn::Expr::Path(p) if p.path.segments.last().unwrap().ident == "None")
-    );
+    assert!(matches!(expr, syn::Expr::Path(p) if p.path.segments.last().unwrap().ident == "None"));
 }
 
 #[test]

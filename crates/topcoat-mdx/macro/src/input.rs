@@ -160,7 +160,9 @@ pub(crate) fn parse_optional_wrapper(input: ParseStream) -> syn::Result<Option<S
 
 /// Parses an optional `overrides = { "tag" => Path, ... }` from a `ParseStream`.
 /// Returns an empty vector if no overrides keyword is found.
-pub(crate) fn parse_optional_overrides(input: ParseStream) -> syn::Result<Vec<(&'static str, SynPath)>> {
+pub(crate) fn parse_optional_overrides(
+    input: ParseStream,
+) -> syn::Result<Vec<(&'static str, SynPath)>> {
     let fork = input.fork();
     if !fork.peek(Token![,]) {
         return Ok(Vec::new());
@@ -188,10 +190,7 @@ pub(crate) fn parse_optional_overrides(input: ParseStream) -> syn::Result<Vec<(&
             // avoids complex lifetime gymnastics at proc-macro expand time.
             // This is acceptable because override tags are declared per-
             // invocation and their total heap cost is negligible.
-            (
-                String::leak(p.tag.value()) as &'static str,
-                p.path,
-            )
+            (String::leak(p.tag.value()) as &'static str, p.path)
         })
         .collect())
 }
@@ -239,10 +238,7 @@ impl Parse for MdxPageInput {
                         .map(|p| {
                             // Intentional leak: override tag names are small and
                             // WalkContext requires &'static str.
-                            (
-                                String::leak(p.tag.value()) as &'static str,
-                                p.path,
-                            )
+                            (String::leak(p.tag.value()) as &'static str, p.path)
                         })
                         .collect(),
                 );
@@ -323,10 +319,7 @@ impl Parse for MdxPagesInput {
                         .map(|p| {
                             // Intentional leak: override tag names are small and
                             // WalkContext requires &'static str.
-                            (
-                                String::leak(p.tag.value()) as &'static str,
-                                p.path,
-                            )
+                            (String::leak(p.tag.value()) as &'static str, p.path)
                         })
                         .collect(),
                 );

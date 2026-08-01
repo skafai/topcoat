@@ -26,10 +26,7 @@ async fn compile_mdx_with_frontmatter_compiles() {
         "frontmatter should not render as content"
     );
     // But the body content should render.
-    assert!(
-        html.contains("Hello from MDX"),
-        "body should render"
-    );
+    assert!(html.contains("Hello from MDX"), "body should render");
 }
 
 // ---- Backward compatibility: compile_mdx! still works ----
