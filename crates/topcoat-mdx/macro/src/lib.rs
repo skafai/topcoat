@@ -1289,13 +1289,11 @@ fn build_index(
                 let deserialized: serde_value::Value =
                     if matches!(format, FrontmatterFormat::Yaml) {
                         serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
-                            eprintln!("mdx_pages! failed to deserialize frontmatter YAML: {e}");
-                            serde_value::Value::Unit
+                            panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
                         })
                     } else {
                         toml::from_str(fm_content).unwrap_or_else(|e| {
-                            eprintln!("mdx_pages! failed to deserialize frontmatter TOML: {e}");
-                            serde_value::Value::Unit
+                            panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
                         })
                     };
 
