@@ -428,50 +428,30 @@ pub fn walk_excerpt_to_writer(
     writer: &mut ViewWriter,
 ) {
     match node {
-        // Root-level Text: strip marker substring.
+        // Root-level Text: strip marker substring and write directly.
         markdown::mdast::Node::Text(t) => {
             let stripped: String = t.value.replace("<!-- more -->", "");
             if !stripped.is_empty() {
                 writer.write_text(&stripped);
             }
         }
-        // Paragraph: strip marker from its Text children before walking.
+        // Paragraph: strip marker from Text children, build <p> manually
+        // (walk_node would double-wrap since it already adds <p>).
         markdown::mdast::Node::Paragraph(p) => {
-            let children: Vec<markdown::mdast::Node> = p
-                .children
-                .iter()
-                .map(|child| {
-                    if let markdown::mdast::Node::Text(t) = child {
+            let mut child_nodes = Vec::new();
+            for child in &p.children {
+                match child {
+                    markdown::mdast::Node::Text(t) => {
                         let stripped: String = t.value.replace("<!-- more -->", "");
-                        if stripped.is_empty() {
-                            // Emit a zero-length Text node so the slot is not dropped.
-                            markdown::mdast::Node::Text(markdown::mdast::Text {
-                                position: t.position,
-                                value: String::new(),
-                            })
-                        } else {
-                            markdown::mdast::Node::Text(markdown::mdast::Text {
-                                position: t.position,
-                                value: stripped,
-                            })
+                        if !stripped.is_empty() {
+                            child_nodes.push(helpers::text_node(&stripped));
                         }
-                    } else {
-                        child.clone()
                     }
-                })
-                .collect();
-            let stripped_p = markdown::mdast::Paragraph {
-                position: p.position,
-                children,
-            };
-            let para_attrs = helpers::with_attributes(Vec::new());
-            let para_children = Nodes::from(vec![helpers::html_element(
-                "p",
-                walk_nodes(ctx, &stripped_p.children),
-            )]);
-            for vn in para_children.into_vec() {
-                vn.write(writer);
+                    _ => child_nodes.extend(walk_node(ctx, child)),
+                }
             }
+            let para = helpers::html_element("p", Nodes::from(child_nodes));
+            para.write(writer);
         }
         // All other nodes: walk normally (marker is not present).
         _ => {
