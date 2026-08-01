@@ -953,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_raw_html_renders_as_text() {
+    fn walk_raw_html_does_not_produce_element() {
         // After html_flow/html_text are disabled, raw HTML like <div>content</div>
         // is no longer parsed as Node::Html — it appears as text content.
         // The walker should NOT produce a <div> element from raw HTML.
