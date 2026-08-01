@@ -777,17 +777,17 @@ fn html_element(tag: &str, children: Nodes) -> Node {
 
 /// Constructs a normal HTML element with custom attributes.
 fn normal_element_with_attrs(tag: &str, attributes: Attributes, children: Nodes) -> Element {
-    let closing_name = make_element_name(tag);
+    let name = make_element_name(tag);
     let opening = OpeningTag {
         lt: parse_quote!(<),
-        name: make_element_name(tag),
+        name: name.clone(),
         attributes,
         gt: parse_quote!(>),
     };
     let closing = ClosingTag {
         lt: parse_quote!(<),
         slash: parse_quote!(/),
-        name: closing_name,
+        name,
         gt: parse_quote!(>),
     };
     Element::Normal {

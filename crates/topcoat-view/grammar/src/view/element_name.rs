@@ -22,7 +22,7 @@ use crate::{
 /// identifier (`div`, `data-foo`, `xmlns:xlink`), a string literal
 /// (`"my-tag"`), or a parenthesized Rust expression that resolves to the tag
 /// name at runtime.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ElementName {
     Ident(HtmlIdent),
     LitStr(LitStr),
