@@ -8,6 +8,23 @@ mdx_pages!("content/blog", prefix = "/blog");
 let router = Router::builder().discover().build();
 ```
 
+`mdx_pages!` must be placed at module level — it generates consts, functions, and inventory registrations that cannot appear inside a function body.
+
+# Combining with `module_router!`
+
+`mdx_pages!` registers each page as a `PageFn` in the link-time inventory. When using `module_router!`, call `.discover()` on the returned builder so that these inventory items are picked up:
+
+```rust,ignore
+use topcoat::router::{module_router, RouterBuilderDiscoverExt};
+
+pub fn router() -> Router {
+    let builder: RouterBuilder = module_router!().into();
+    builder.discover().build()
+}
+```
+
+Without `.discover()`, the `#[page]`, `#[layout]`, and `#[route]` items in your module tree work fine — but any pages registered by `mdx_pages!` will not appear on the router.
+
 # Syntax
 
 ```text
