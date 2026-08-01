@@ -208,6 +208,11 @@ fn parse_optional_overrides(input: ParseStream) -> syn::Result<Vec<(&'static str
     Ok(pairs
         .into_iter()
         .map(|p| {
+            // Intentional leak: override tag names (e.g. "a", "img", "pre")
+            // are small and the WalkContext requires &'static str. Leaking
+            // avoids complex lifetime gymnastics at proc-macro expand time.
+            // This is acceptable because override tags are declared per-
+            // invocation and their total heap cost is negligible.
             (
                 String::leak(p.tag.value()) as &'static str,
                 p.path,
@@ -257,6 +262,8 @@ impl Parse for MdxPageInput {
                     pairs
                         .into_iter()
                         .map(|p| {
+                            // Intentional leak: override tag names are small and
+                            // WalkContext requires &'static str.
                             (
                                 String::leak(p.tag.value()) as &'static str,
                                 p.path,
@@ -339,6 +346,8 @@ impl Parse for MdxPagesInput {
                     pairs
                         .into_iter()
                         .map(|p| {
+                            // Intentional leak: override tag names are small and
+                            // WalkContext requires &'static str.
                             (
                                 String::leak(p.tag.value()) as &'static str,
                                 p.path,
@@ -1281,6 +1290,8 @@ fn build_index(
             .and_then(|s| s.to_str())
             .unwrap_or("page")
             .to_kebab_case();
+        // Intentional leak: slugs are small and the index array requires
+        // &'static str. Leaking avoids complex lifetime management.
         let slug_str: &'static str = Box::leak(slug.into_boxed_str());
 
         // Extract known fields from frontmatter using generic deserialization.
