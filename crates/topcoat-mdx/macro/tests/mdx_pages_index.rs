@@ -101,6 +101,35 @@ mod index_test {
     }
 }
 
+// ---- Frontmatter tags reaching the index ----
+
+mod tags_test {
+    use topcoat_mdx_macro::mdx_pages;
+
+    mdx_pages!("tests/fixtures/tagged-pages", prefix = "/tags-test");
+
+    #[test]
+    fn mdx_index_entry_with_several_tags() {
+        let index = mdx_index_tests_fixtures_tagged_pages();
+        let post = index
+            .iter()
+            .find(|e| e.slug == "multi-tag")
+            .expect("multi-tag entry should exist");
+        assert_eq!(post.tags, &["rust", "mdx", "web"]);
+        assert_eq!(post.excerpt, Some("A post carrying several tags."));
+    }
+
+    #[test]
+    fn mdx_index_entry_with_one_tag() {
+        let index = mdx_index_tests_fixtures_tagged_pages();
+        let post = index
+            .iter()
+            .find(|e| e.slug == "single-tag")
+            .expect("single-tag entry should exist");
+        assert_eq!(post.tags, &["rust"]);
+    }
+}
+
 // ---- Index entry type test ----
 
 mod type_test {

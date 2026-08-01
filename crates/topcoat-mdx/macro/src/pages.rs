@@ -12,7 +12,7 @@ use topcoat_mdx_grammar::{
     walker::{FrontmatterFormat, extract_frontmatter},
 };
 
-use crate::{compile::parse_and_walk_mdx, convert::value_to_expr};
+use crate::compile::parse_and_walk_mdx;
 
 // ---------------------------------------------------------------------------
 // mdx_pages! helpers
@@ -114,12 +114,17 @@ pub(crate) fn scan_directory(
 /// For each page, extracts title/date/tags/excerpt from frontmatter
 /// using generic `serde_value::Value` parsing, and derives the full
 /// route path from the scan directory, file location, and optional prefix.
+///
+/// # Errors
+///
+/// Returns an error when a scanned file carries frontmatter that fails to
+/// deserialize, naming the file so the author can find it.
 pub(crate) fn build_index(
     scan_dir: &Path,
     entries: &[MdxPageEntry],
     prefix: Option<&str>,
-    _span: Span,
-) -> Vec<proc_macro2::TokenStream> {
+    span: Span,
+) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut index_items = Vec::new();
 
     for entry in entries {
@@ -159,14 +164,25 @@ pub(crate) fn build_index(
         let (title_expr, date_expr, excerpt_expr, tags_expr) = if let Some((fm_content, format)) =
             &frontmatter
         {
+            let display = resolved.display();
             let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
-                serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
-                    panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
-                })
+                serde_saphyr::from_str(fm_content).map_err(|e| {
+                    syn::Error::new(
+                        span,
+                        format!(
+                            "mdx_pages! cannot deserialize YAML frontmatter in '{display}': {e}"
+                        ),
+                    )
+                })?
             } else {
-                toml::from_str(fm_content).unwrap_or_else(|e| {
-                    panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
-                })
+                toml::from_str(fm_content).map_err(|e| {
+                    syn::Error::new(
+                        span,
+                        format!(
+                            "mdx_pages! cannot deserialize TOML frontmatter in '{display}': {e}"
+                        ),
+                    )
+                })?
             };
 
             let title = extract_string_field(&deserialized, "title");
@@ -205,7 +221,7 @@ pub(crate) fn build_index(
         });
     }
 
-    index_items
+    Ok(index_items)
 }
 
 /// Extract a string field from a `serde_value::Value` Map.
@@ -238,7 +254,7 @@ fn extract_tags_field(value: &serde_value::Value) -> proc_macro2::TokenStream {
             .collect();
 
         if !tag_lits.is_empty() {
-            return quote! { &#(#tag_lits),* };
+            return quote! { &[#(#tag_lits),*] };
         }
     }
     quote! { &[] }
@@ -246,15 +262,14 @@ fn extract_tags_field(value: &serde_value::Value) -> proc_macro2::TokenStream {
 
 /// Generates page registration tokens for a single `.mdx` or `.md` file.
 ///
-/// Mirrors the logic in `mdx_page!` but supports frontmatter type, components,
-/// overrides, and wrapper arguments from `mdx_pages!`.
+/// Mirrors the logic in `mdx_page!` but supports the components, overrides,
+/// and wrapper arguments from `mdx_pages!`.
 pub(crate) fn generate_page_registration(
     file_path: &Path,
     route_path: &str,
     components: &[(String, SynPath)],
     overrides: &[(&'static str, SynPath)],
     wrapper: Option<&SynPath>,
-    frontmatter_type: Option<&syn::Type>,
     span: Span,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     let path_display = file_path.to_string_lossy();
@@ -283,46 +298,11 @@ pub(crate) fn generate_page_registration(
         .unwrap_or("page")
         .to_kebab_case()
         .replace('-', "_");
-    let file_stem_upper = file_stem.to_uppercase();
     let render_fn_name = Ident::new(&format!("__mdx_pages_render_{file_stem}"), span);
     let unit_name = Ident::new(&format!("__mdx_pages_{file_stem}"), span);
     let route_path_lit = LitStr::new(route_path, span);
 
     let view_tokens = &result.view_tokens;
-
-    // Frontmatter const (when frontmatter_type is provided and content has frontmatter).
-    let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
-        (&result.frontmatter_content, frontmatter_type)
-    {
-        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem_upper}"), span);
-
-        let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
-            serde_saphyr::from_str(content).unwrap_or_else(|e| {
-                panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
-            })
-        } else {
-            toml::from_str(content).unwrap_or_else(|e| {
-                panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
-            })
-        };
-
-        let expr = value_to_expr(&deserialized, Some(fm_type), span)?;
-        quote! {
-            #[allow(clippy::approx_constant)]
-            const #fm_const_name: #fm_type = #expr;
-        }
-    } else {
-        quote! {}
-    };
-
-    let fm_insert = if result.frontmatter_content.is_some() && frontmatter_type.is_some() {
-        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem_upper}"), span);
-        quote! {
-            #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
-        }
-    } else {
-        quote! {}
-    };
 
     // Apply wrapper if requested.
     let render_body = if result.has_wrapper {
@@ -338,11 +318,14 @@ pub(crate) fn generate_page_registration(
         quote! { Ok(#view_tokens?) }
     };
 
-    Ok(quote! {
-        #[allow(clippy::needless_question_mark, clippy::approx_constant)]
-        const _: () = {
-            #fm_const_and_insert
+    // Only submit to the link-time inventory when discovery is enabled, so
+    // that `mdx_pages!` also compiles without the `discover` feature.
+    let submit =
+        cfg!(feature = "discover").then(|| quote! { #topcoat_inventory::submit!(ERASED); });
 
+    Ok(quote! {
+        #[allow(clippy::needless_question_mark)]
+        const _: () = {
             fn #render_fn_name(
                 __cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
@@ -350,7 +333,6 @@ pub(crate) fn generate_page_registration(
                 Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
                 ::std::boxed::Box::pin(async move {
-                    #fm_insert
                     #render_body
                 })
             }
@@ -370,7 +352,7 @@ pub(crate) fn generate_page_registration(
                 }
             }
 
-            #topcoat_inventory::submit!(ERASED);
+            #submit
         };
     })
 }

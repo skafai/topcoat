@@ -77,6 +77,7 @@ datastar = [
 discover = [
 	"dep:inventory",
 	"topcoat-font?/discover",
+	"topcoat-mdx-macro?/discover",
 	"topcoat-router?/discover",
 	"topcoat-router-macro?/discover",
 	"topcoat-runtime?/discover",
