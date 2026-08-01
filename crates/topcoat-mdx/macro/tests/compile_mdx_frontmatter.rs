@@ -21,9 +21,15 @@ async fn compile_mdx_with_frontmatter_compiles() {
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
     // The frontmatter should NOT appear in the rendered HTML.
-    assert!(!html.contains("---"), "frontmatter should not render as content");
+    assert!(
+        !html.contains("---"),
+        "frontmatter should not render as content"
+    );
     // But the body content should render.
-    assert!(html.contains("<h1>Hello from MDX</h1>"), "body should render");
+    assert!(
+        html.contains("<h1>Hello from MDX</h1>"),
+        "body should render"
+    );
 }
 
 // ---- Backward compatibility: compile_mdx! still works ----
@@ -31,8 +37,7 @@ async fn compile_mdx_with_frontmatter_compiles() {
 #[tokio::test]
 async fn compile_mdx_backward_compat_one_arg() {
     // Verify one-arg compile_mdx! still compiles with plain markdown fixture.
-    let view = compile_mdx!("tests/fixtures/tracer.mdx")
-        .expect("view should render successfully");
+    let view = compile_mdx!("tests/fixtures/tracer.mdx").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
     assert!(html.contains("Tracer Test"), "tracer content should render");
@@ -47,7 +52,10 @@ async fn compile_mdx_without_frontmatter() {
         .expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
-    assert!(html.contains("No Frontmatter"), "plain content should render");
+    assert!(
+        html.contains("No Frontmatter"),
+        "plain content should render"
+    );
 }
 
 // ---- Complex frontmatter ----
@@ -59,8 +67,14 @@ async fn compile_mdx_complex_frontmatter() {
         .expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
-    assert!(html.contains("Complex Frontmatter Test"), "body should render");
-    assert!(!html.contains("---"), "frontmatter should not render as content");
+    assert!(
+        html.contains("Complex Frontmatter Test"),
+        "body should render"
+    );
+    assert!(
+        !html.contains("---"),
+        "frontmatter should not render as content"
+    );
 }
 
 // ---- Frontmatter extractor ----
@@ -82,10 +96,13 @@ fn frontmatter_struct_matches_fixture() {
 
 #[tokio::test]
 async fn compile_mdx_handles_md_extension_with_frontmatter() {
-    let view = compile_mdx!("tests/fixtures/frontmatter_md.md")
-        .expect("view should render successfully");
+    let view =
+        compile_mdx!("tests/fixtures/frontmatter_md.md").expect("view should render successfully");
     let cx = CxTestBuilder::new().build();
     let html = view.render(&cx);
     assert!(html.contains("<h1>"), "body should render");
-    assert!(!html.contains("---"), "frontmatter should not render as content");
+    assert!(
+        !html.contains("---"),
+        "frontmatter should not render as content"
+    );
 }
