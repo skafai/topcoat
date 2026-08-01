@@ -206,7 +206,7 @@ fn parse_optional_overrides(input: ParseStream) -> syn::Result<Vec<(&'static str
         .into_iter()
         .map(|p| {
             (
-                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                String::leak(p.tag.value()) as &'static str,
                 p.path,
             )
         })
@@ -255,7 +255,7 @@ impl Parse for MdxPageInput {
                         .into_iter()
                         .map(|p| {
                             (
-                                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                                String::leak(p.tag.value()) as &'static str,
                                 p.path,
                             )
                         })
@@ -337,7 +337,7 @@ impl Parse for MdxPagesInput {
                         .into_iter()
                         .map(|p| {
                             (
-                                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                                String::leak(p.tag.value()) as &'static str,
                                 p.path,
                             )
                         })
