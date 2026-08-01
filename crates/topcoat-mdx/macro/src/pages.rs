@@ -283,6 +283,7 @@ pub(crate) fn generate_page_registration(
         .unwrap_or("page")
         .to_kebab_case()
         .replace('-', "_");
+    let file_stem_upper = file_stem.to_uppercase();
     let render_fn_name = Ident::new(&format!("__mdx_pages_render_{file_stem}"), span);
     let unit_name = Ident::new(&format!("__mdx_pages_{file_stem}"), span);
     let route_path_lit = LitStr::new(route_path, span);
@@ -293,7 +294,7 @@ pub(crate) fn generate_page_registration(
     let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
         (&result.frontmatter_content, frontmatter_type)
     {
-        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem_upper}"), span);
 
         let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
             serde_saphyr::from_str(content).unwrap_or_else(|e| {
@@ -315,7 +316,7 @@ pub(crate) fn generate_page_registration(
     };
 
     let fm_insert = if result.frontmatter_content.is_some() && frontmatter_type.is_some() {
-        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem_upper}"), span);
         quote! {
             #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
         }

@@ -114,7 +114,8 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("MDX")
-            .replace('-', "_");
+            .replace('-', "_")
+            .to_uppercase();
         let const_name = Ident::new(&format!("__MDX_FRONTMATTER_{file_stem}"), lit_str.span());
         let yaml_lit = LitStr::new(&content, lit_str.span());
 
@@ -189,6 +190,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         .and_then(|s| s.to_str())
         .unwrap_or("page")
         .replace('-', "_");
+    let file_stem_upper = file_stem.to_uppercase();
     let render_fn_name = Ident::new(&format!("__mdx_render_{file_stem}"), file_path.span());
     let unit_name = Ident::new(&format!("__mdx_page_{file_stem}"), file_path.span());
 
@@ -197,7 +199,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         (&result.frontmatter_content, &input.frontmatter_type)
     {
         let fm_const_name = Ident::new(
-            &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
+            &format!("__MDX_PAGE_FRONTMATTER_{file_stem_upper}"),
             file_path.span(),
         );
 
@@ -230,7 +232,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
     let fm_insert = if result.frontmatter_content.is_some() && input.frontmatter_type.is_some() {
         let fm_const_name = Ident::new(
-            &format!("__MDX_PAGE_FRONTMATTER_{file_stem}"),
+            &format!("__MDX_PAGE_FRONTMATTER_{file_stem_upper}"),
             file_path.span(),
         );
         quote! {
