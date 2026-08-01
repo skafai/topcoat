@@ -1075,6 +1075,22 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         Err(e) => return e.to_compile_error().into(),
     };
 
+    // Security: verify scan directory stays within manifest directory before
+    // enumeration (T-03.1-04). Per-file guards at line ~1106 catch escaping
+    // entries, but rejecting the whole directory avoids unnecessary traversal,
+    // prevents external file paths from leaking through diagnostics, and
+    // matches compile_mdx_file which validates before reading.
+    if !canonical_scan_dir.starts_with(&canonical_manifest) {
+        return syn::Error::new(
+            span,
+            format!(
+                "mdx_pages! scan directory '{dir_str}' resolves outside CARGO_MANIFEST_DIR (T-03.1-04)"
+            ),
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let prefix = input.prefix.as_ref().map(syn::LitStr::value);
     let components: Vec<(String, SynPath)> = input.components.unwrap_or_default();
     let overrides: Vec<(&'static str, SynPath)> = input.overrides.unwrap_or_default();
