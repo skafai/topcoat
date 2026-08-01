@@ -400,6 +400,11 @@ struct CompiledMdxResult {
     /// Excerpt tokens from the walker when `<!-- more -->` is present.
     /// Contains the view tokens for the content before the excerpt marker,
     /// produced by a separate ViewWriter.
+    ///
+    /// TODO: Currently computed but not emitted to generated code. The
+    /// caller (`compile_mdx!`, `mdx_page!`) only uses `view_tokens`.
+    /// Excerpt tokens should be exposed as a separate const or component
+    /// prop so consuming code can render the excerpt independently.
     #[allow(dead_code)]
     excerpt_tokens: Option<proc_macro2::TokenStream>,
 }
