@@ -2,10 +2,10 @@
 
 This is a paragraph before the component.
 
-<!-- NOTE: <Badge label="tag"></Badge> must use the empty tag-pair form.
-markdown-rs only parses <Widget></Widget> as MdxJsxFlowElement.
-Self-closing <Badge /> or <Badge></Badge> with content may be parsed as
-raw HTML depending on the parser version. See walker.rs tracer comment. -->
+{/* NOTE: Badge must use the empty tag-pair form.
+markdown-rs only parses open+close tag pairs as MdxJsxFlowElement.
+Self-closing forms may be parsed as raw HTML depending on parser version.
+See walker.rs tracer comment. */}
 <Badge label="tag"></Badge>
 
 Another paragraph after the component.

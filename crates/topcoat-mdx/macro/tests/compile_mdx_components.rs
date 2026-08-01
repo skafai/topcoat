@@ -319,7 +319,7 @@ mod components_nested {
     }
 }
 
-// --- components_self_closing: empty tags and html ---
+// --- components_self_closing: empty tags and markdown hr ---
 
 mod components_self_closing {
     use super::*;
@@ -348,10 +348,10 @@ mod components_self_closing {
             html.contains("mdx-divider"),
             "should have divider component. Got:\n{html}"
         );
-        // <hr> raw HTML should pass through.
+        // Markdown horizontal rule (---) should produce <hr>.
         assert!(
             html.contains("<hr>"),
-            "should have <hr> HTML passthrough. Got:\n{html}"
+            "should have <hr> from markdown horizontal rule. Got:\n{html}"
         );
     }
 }
