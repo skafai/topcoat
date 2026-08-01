@@ -1,18 +1,18 @@
 Topcoat MDX compiles `.mdx` and `.md` files at build time into `view!` AST nodes. Content authors write markdown with embedded Topcoat components, and the `compile_mdx!` macro reads the file, parses it with `markdown-rs`, walks the syntax tree into `view!` nodes, and emits tokens. There is zero runtime parsing overhead.
 
+`compile_mdx!` expands to the same expression a `view!` block produces, so it takes the place of a `view!` block in a handler body rather than nesting inside one.
+
 ```rust,ignore
-use topcoat::{mdx::{compile_mdx, mdx_components}, router::page, view::view};
+use topcoat::{mdx::compile_mdx, router::page};
 
 #[page("/blog/hello")]
 async fn hello_page() -> topcoat::Result {
-    view! {
-        compile_mdx!(
-            mdx_components! {
-                Callout => components::callout,
-            },
-            "content/hello.mdx"
-        )
-    }
+    compile_mdx!(
+        mdx_components! {
+            Callout => components::callout,
+        },
+        "content/hello.mdx"
+    )
 }
 ```
 
@@ -81,7 +81,7 @@ async fn blog_index() -> Result {
 
 # Routes
 
-The [`mdx_page!`][mdx_page] macro compiles a single file and registers it as a route. The [`mdx_pages!`][mdx_pages] macro walks a directory, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename. Both macros accept optional `components`, `overrides`, and `wrapper` arguments.
+The [`mdx_page!`][mdx_page] macro compiles a single file and registers it as a route. The [`mdx_pages!`][mdx_pages] macro walks a directory, compiles every `.mdx` and `.md` file, and registers a handler per file. Route paths are the prefix, the subdirectory structure below the scanned directory, and the kebab-cased filename stem, so nested directories keep their shape in the route. Both macros accept optional `components`, `overrides`, and `wrapper` arguments.
 
 ```rust,ignore
 use topcoat::mdx::mdx_pages;

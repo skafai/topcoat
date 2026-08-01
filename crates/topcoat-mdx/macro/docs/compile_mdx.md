@@ -1,18 +1,18 @@
 The `compile_mdx!` macro reads a `.mdx` or `.md` file at compile time, parses it with `markdown-rs`, walks the syntax tree into `view!` AST nodes, and emits the tokens. There is zero runtime parsing overhead.
 
+The macro expands to the same expression a `view!` block produces, so it takes the place of a `view!` block in a handler body rather than nesting inside one.
+
 ```rust,ignore
-use topcoat::{mdx::{compile_mdx, mdx_components}, router::page, view::view};
+use topcoat::{mdx::compile_mdx, router::page};
 
 #[page("/blog/post")]
 async fn post_page() -> topcoat::Result {
-    view! {
-        compile_mdx!(
-            mdx_components! {
-                Callout => components::callout,
-            },
-            "content/post.mdx"
-        )
-    }
+    compile_mdx!(
+        mdx_components! {
+            Callout => components::callout,
+        },
+        "content/post.mdx"
+    )
 }
 ```
 
