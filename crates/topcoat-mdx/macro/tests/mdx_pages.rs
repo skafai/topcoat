@@ -54,3 +54,69 @@ mod md_only_test {
         // The directory contains only .md files, no .mdx files.
     }
 }
+
+// ---- mdx_pages! with wrapper ----
+
+mod wrapper_test {
+    use topcoat::view::{View, component, view};
+    use topcoat_mdx_macro::mdx_pages;
+
+    type Result<T = View> = topcoat::Result<T>;
+
+    #[component]
+    async fn blog_wrapper(#[default] child: View) -> Result {
+        view! {
+            <article class="blog-layout">
+                (child)
+            </article>
+        }
+    }
+
+    // mdx_pages! with wrapper = Path should compile.
+    mdx_pages!(
+        "tests/fixtures/pages",
+        prefix = "/with-wrapper",
+        wrapper = blog_wrapper
+    );
+
+    #[test]
+    fn mdx_pages_with_wrapper_compiles() {
+        // Compilation proves wrapper tokens were generated.
+    }
+}
+
+// ---- mdx_pages! with components and overrides ----
+
+mod components_and_overrides_test {
+    use topcoat::view::{View, component, view};
+    use topcoat_mdx_macro::mdx_pages;
+
+    type Result<T = View> = topcoat::Result<T>;
+
+    #[component]
+    async fn callout_component(#[default] child: View) -> Result {
+        view! {
+            <div class="callout">(child)</div>
+        }
+    }
+
+    #[component]
+    async fn custom_link_override(href: &'static str, #[default] child: View) -> Result {
+        view! {
+            <a class="custom-link" href=(href)>(child)</a>
+        }
+    }
+
+    // mdx_pages! with components = {...} and overrides = {...} should compile.
+    mdx_pages!(
+        "tests/fixtures/pages",
+        prefix = "/with-components",
+        components = { Callout => callout_component },
+        overrides = { "a" => custom_link_override }
+    );
+
+    #[test]
+    fn mdx_pages_with_components_and_overrides_compiles() {
+        // Compilation proves components and overrides were threaded through.
+    }
+}
