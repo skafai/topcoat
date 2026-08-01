@@ -149,8 +149,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
             let children = walk_nodes(ctx, &h.children);
-            if let Some(node) = jsx::try_apply_override(ctx, &tag, &topcoat_view_grammar::attributes::Attributes::default(), children) {
-                vec![node]
+            if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
+                vec![jsx::build_override_component(path, &topcoat_view_grammar::attributes::Attributes::default(), children, ctx.span)]
             } else {
                 vec![helpers::html_element(&tag, children)]
             }
@@ -171,8 +171,8 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![helpers::html_element("blockquote", walk_nodes(ctx, &b.children))]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
-            if let Some(node) = jsx::try_apply_override(ctx, "hr", &topcoat_view_grammar::attributes::Attributes::default(), Nodes::new()) {
-                vec![node]
+            if let Some(path) = jsx::try_find_override_path(ctx, "hr") {
+                vec![jsx::build_override_component(path, &topcoat_view_grammar::attributes::Attributes::default(), Nodes::new(), ctx.span)]
             } else {
                 vec![Node::Element(Box::new(helpers::void_element("hr")))]
             }

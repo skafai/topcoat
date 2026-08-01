@@ -5,7 +5,7 @@
 //! components replace standard HTML elements.
 
 use proc_macro2::Span;
-use syn::{Expr, LitStr, token::{Colon, Paren}};
+use syn::{Expr, LitStr, Path as SynPath, token::{Colon, Paren}};
 use topcoat_view_grammar::{
     attributes::{AttributeKey, AttributeNode, AttributeValue, Attributes},
     view::{Component, NamedArg, NamedArgValue, Node, Nodes},
@@ -106,10 +106,56 @@ pub fn try_apply_override(
     }))
 }
 
-/// Checks whether an override is registered for the given tag.
+/// Returns the override path for the given tag without consuming children.
+///
+/// Unlike `try_apply_override`, this only performs the lookup and returns
+/// the component path, so it can be used as a guard before deciding whether
+/// to pass owned values into the component builder.
 #[inline]
-pub(crate) fn has_override(ctx: &WalkContext, tag: &str) -> bool {
-    ctx.overrides.iter().any(|(t, _)| *t == tag)
+pub(crate) fn try_find_override_path(ctx: &WalkContext, tag: &str) -> Option<SynPath> {
+    ctx.overrides.iter().find_map(|(t, p)| if *t == tag { Some(p.clone()) } else { None })
+}
+
+/// Builds a `Node::Component` from a pre-resolved override path.
+///
+/// Use `try_find_override_path` to check for an override first, then pass
+/// the path here along with the owned children. This avoids the ownership
+/// issue where `try_apply_override` would consume `children` even when
+/// no override was registered.
+pub(crate) fn build_override_component(
+    path: SynPath,
+    attributes: &Attributes,
+    children: Nodes,
+    span: Span,
+) -> Node {
+    let named_args: Vec<NamedArg> = attributes
+        .items
+        .iter()
+        .filter_map(|attr_node| {
+            if let AttributeNode::Attribute(attr) = attr_node
+                && let AttributeKey::Ident(ident) = &attr.key
+            {
+                let name = ident.first.to_string();
+                let expr: Expr = match &attr.value {
+                    AttributeValue::LitStr(s) => coerce_attr_value(&s.value(), span),
+                    AttributeValue::Expr(_) => syn::parse_quote!(true),
+                };
+                return Some(NamedArg {
+                    ident: make_ident(&name),
+                    colon: Colon::default(),
+                    value: NamedArgValue::Expr(expr),
+                });
+            }
+            None
+        })
+        .collect();
+
+    Node::Component(Component {
+        path,
+        paren_token: Paren::default(),
+        named_args,
+        children,
+    })
 }
 
 /// Walk JSX attributes from an mdast element into `NamedArg`s.
