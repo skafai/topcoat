@@ -24,6 +24,10 @@ use crate::parse::get_parse_options;
 pub struct WalkContext<'a> {
     /// Component registry: tag-name → Rust path pairs.
     pub components: &'a [(String, Path)],
+    /// HTML element override registry: tag-name → Rust path pairs.
+    /// When a tag is registered here, the walker emits a `Node::Component`
+    /// instead of a `Node::Element` for that tag.
+    pub overrides: &'a [(&'static str, Path)],
     /// Error strings collected during walking. The macro layer (Plan 02)
     /// drains this buffer and converts each entry into a `syn::Error`.
     pub errors: RefCell<Vec<String>>,
@@ -34,20 +38,32 @@ pub struct WalkContext<'a> {
 }
 
 impl<'a> WalkContext<'a> {
-    /// Create a new walk context with the given component registry and span.
+    /// Create a new walk context with the given component registry,
+    /// override registry, and span.
     #[must_use]
-    pub fn new(components: &'a [(String, Path)], span: Span) -> Self {
+    pub fn new(
+        components: &'a [(String, Path)],
+        overrides: &'a [(&'static str, Path)],
+        span: Span,
+    ) -> Self {
         Self {
             components,
+            overrides,
             errors: RefCell::new(Vec::new()),
             span,
         }
     }
 
-    /// Create an empty-context walker (no component registry).
+    /// Create an empty-context walker (no component registry, no overrides).
     #[must_use]
     pub fn empty() -> Self {
-        Self::new(&[], Span::call_site())
+        Self::new(&[], &[], Span::call_site())
+    }
+
+    /// Create a walker with empty component registry but the given overrides.
+    #[must_use]
+    pub fn empty_with_overrides(overrides: &'a [(&'static str, Path)]) -> Self {
+        Self::new(&[], overrides, Span::call_site())
     }
 }
 
@@ -257,6 +273,8 @@ fn is_safe_url(url: &str) -> bool {
 fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     if !is_safe_url(&link.url) {
         // Strip the href to prevent XSS; render link text only.
+        // T-03.1-01: is_safe_url() check runs BEFORE try_apply_override()
+        // so dangerous URLs never route through the override component.
         let children = walk_nodes(ctx, &link.children);
         return html_element("span", children);
     }
@@ -267,6 +285,11 @@ fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node {
     }
     let attributes = with_attributes(attrs);
     let children = walk_nodes(ctx, &link.children);
+    // Check for override AFTER is_safe_url() passes (XSS protection preserved).
+    if has_override(ctx, "a") {
+        // try_apply_override will succeed here since we checked has_override first.
+        return try_apply_override(ctx, "a", &attributes, children).unwrap();
+    }
     Node::Element(Box::new(normal_element_with_attrs(
         "a", attributes, children,
     )))
@@ -499,6 +522,61 @@ pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
         attrs: vec![],
         lit: syn::Lit::Str(LitStr::new(value, span)),
     })
+}
+
+/// Tries to apply an HTML element override from the `WalkContext`.
+///
+/// Returns `Some(Node::Component)` when `tag` is registered in `ctx.overrides`,
+/// emitting a component node with the given attributes converted to named
+/// props and the provided children.
+///
+/// Returns `None` when no override is registered for `tag`, letting the
+/// caller construct the standard HTML element.
+pub fn try_apply_override(
+    ctx: &WalkContext,
+    tag: &str,
+    attributes: &Attributes,
+    children: Nodes,
+) -> Option<Node> {
+    let path = ctx.overrides.iter().find(|(t, _)| *t == tag)?.1.clone();
+
+    // Convert Attribute nodes to NamedArg values.
+    let named_args: Vec<NamedArg> = attributes
+        .items
+        .iter()
+        .filter_map(|attr_node| {
+            if let AttributeNode::Attribute(attr) = attr_node
+                && let AttributeKey::Ident(ident) = &attr.key
+            {
+                    let name = ident.first.to_string();
+                    let expr: Expr = match &attr.value {
+                        AttributeValue::LitStr(s) => {
+                            coerce_attr_value(&s.value(), ctx.span)
+                        }
+                        AttributeValue::Expr(_) => syn::parse_quote!(true),
+                    };
+                    return Some(NamedArg {
+                        ident: make_ident(&name),
+                        colon: Colon::default(),
+                        value: NamedArgValue::Expr(expr),
+                    });
+                }
+            None
+        })
+        .collect();
+
+    Some(Node::Component(Component {
+        path,
+        paren_token: Paren::default(),
+        named_args,
+        children,
+    }))
+}
+
+/// Checks whether an override is registered for the given tag.
+#[inline]
+fn has_override(ctx: &WalkContext, tag: &str) -> bool {
+    ctx.overrides.iter().any(|(t, _)| *t == tag)
 }
 
 /// Walk JSX attributes from an mdast element into `NamedArg`s.
@@ -1658,7 +1736,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_attributes_skip_expression() {
-        let ctx = WalkContext::new(&[], Span::call_site());
+        let ctx = WalkContext::new(&[], &[], Span::call_site());
         let expr_attr = markdown::mdast::AttributeContent::Expression(
             markdown::mdast::MdxJsxExpressionAttribute {
                 value: "...props".to_string(),
@@ -1678,7 +1756,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_unknown_component() {
-        let ctx = WalkContext::new(&[], Span::call_site());
+        let ctx = WalkContext::new(&[], &[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1699,7 +1777,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_lowercase_is_html() {
-        let ctx = WalkContext::new(&[], Span::call_site());
+        let ctx = WalkContext::new(&[], &[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1717,7 +1795,7 @@ mod tests {
 
     #[test]
     fn walk_jsx_element_fragment() {
-        let ctx = WalkContext::new(&[], Span::call_site());
+        let ctx = WalkContext::new(&[], &[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1732,7 +1810,7 @@ mod tests {
     fn walk_jsx_element_registered_produces_component() {
         let component_path: Path = syn::parse_quote!(components::callout);
         let registry = vec![("Callout".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry, Span::call_site());
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![],
             position: None,
@@ -1758,7 +1836,7 @@ mod tests {
     fn walk_jsx_element_self_closing_empty_children() {
         let component_path: Path = syn::parse_quote!(components::divider);
         let registry = vec![("Divider".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry, Span::call_site());
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
         // Self-closing and closed tags both produce empty children in markdown-rs.
         let element = markdown::mdast::MdxJsxFlowElement {
             children: vec![], // empty
@@ -1787,7 +1865,7 @@ mod tests {
         // Self-closing <Widget /> is parsed as raw Html.
         let component_path: Path = syn::parse_quote!(my::widget);
         let registry = vec![("Widget".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry, Span::call_site());
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, "<Widget></Widget>");
         assert_eq!(nodes.len(), 1);
         assert!(
@@ -1803,7 +1881,7 @@ mod tests {
         // this test verifies the walker function works on the struct directly.
         let component_path: Path = syn::parse_quote!(inline::badge);
         let registry = vec![("Badge".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry, Span::call_site());
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let element = markdown::mdast::MdxJsxTextElement {
             children: vec![],
             position: None,
@@ -1821,7 +1899,7 @@ mod tests {
     fn walk_jsx_text_element_unknown_component_pushes_error() {
         // CR-01: inline text-level components must report errors for unknown
         // PascalCase names, matching flow-level walk_jsx_element behavior.
-        let ctx = WalkContext::new(&[], Span::call_site());
+        let ctx = WalkContext::new(&[], &[], Span::call_site());
         let element = markdown::mdast::MdxJsxTextElement {
             children: vec![],
             position: None,
@@ -1845,6 +1923,105 @@ mod tests {
         );
     }
 
+    // ---- Phase 03.1: override mechanism tests ----
+
+    #[test]
+    fn try_apply_override_hits() {
+        let component_path: Path = syn::parse_quote!(components::custom_link);
+        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path.clone())];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let attrs = with_attributes(vec![create_attribute("href", "https://example.com")]);
+        let children = Nodes::from(vec![text_node("click")]);
+        let result = try_apply_override(&ctx, "a", &attrs, children);
+        assert!(result.is_some(), "should return Some when tag has override");
+        if let Some(Node::Component(comp)) = result {
+            assert_eq!(
+                comp.path.segments.last().unwrap().ident.to_string(),
+                "custom_link"
+            );
+            assert_eq!(comp.named_args.len(), 1);
+            assert_eq!(comp.named_args[0].ident.to_string(), "href");
+        } else {
+            panic!("expected Node::Component");
+        }
+    }
+
+    #[test]
+    fn try_apply_override_misses() {
+        let ctx = WalkContext::empty_with_overrides(&[]);
+        let attrs = with_attributes(vec![create_attribute("src", "photo.png")]);
+        let children = Nodes::new();
+        let result = try_apply_override(&ctx, "img", &attrs, children);
+        assert!(result.is_none(), "should return None when tag has no override");
+    }
+
+    #[test]
+    fn walk_link_with_override() {
+        let component_path: Path = syn::parse_quote!(components::custom_link);
+        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "[link](https://example.com)");
+        // Should be inside a paragraph
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            // The link should render as a Component, not an <a> element.
+            let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
+            let has_a = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("a")
+                } else {
+                    false
+                }
+            });
+            assert!(has_component, "paragraph should contain Component for overridden link");
+            assert!(!has_a, "paragraph should NOT contain <a> when override is registered");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn walk_link_override_preserves_xss() {
+        let component_path: Path = syn::parse_quote!(components::custom_link);
+        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "[xss](javascript:alert(1))");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(p) = &nodes[0] {
+            assert_eq!(p.name().string_name().as_deref(), Some("p"));
+            // Dangerous URL should produce <span>, NOT a Component.
+            let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
+            let has_span = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("span")
+                } else {
+                    false
+                }
+            });
+            assert!(
+                !has_component,
+                "javascript: link should NOT produce Component even when override is registered"
+            );
+            assert!(has_span, "javascript: link should produce <span> for XSS protection");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn walk_context_with_overrides() {
+        let component_path: Path = syn::parse_quote!(components::custom_link);
+        let leaked: &'static mut str = Box::leak("a".to_string().into_boxed_str());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        assert_eq!(ctx.overrides.len(), 1);
+        assert_eq!(ctx.overrides[0].0, "a");
+    }
+
     // ---- Phase 02: tracer integration test ----
 
     #[test]
@@ -1858,7 +2035,7 @@ mod tests {
         // by integration tests in the macro crate which use .mdx fixture files.
         let component_path: Path = syn::parse_quote!(components::callout);
         let registry = vec![("Callout".to_string(), component_path)];
-        let ctx = WalkContext::new(&registry, Span::call_site());
+        let ctx = WalkContext::new(&registry, &[], Span::call_site());
         let nodes = parse_and_walk_ctx(&ctx, r#"<Callout type="info"></Callout>"#);
         assert_eq!(nodes.len(), 1);
         let node = &nodes[0];

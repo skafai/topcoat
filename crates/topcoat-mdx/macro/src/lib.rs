@@ -50,9 +50,29 @@ enum CompileMdxInput {
         components: Vec<(String, SynPath)>,
         lit_str: LitStr,
     },
+    TwoArgsWithOverrides {
+        components: Vec<(String, SynPath)>,
+        overrides: Vec<(&'static str, SynPath)>,
+        lit_str: LitStr,
+    },
     OneArg {
         lit_str: LitStr,
     },
+}
+
+/// A single `"tag" => Path` pair in the overrides braced block.
+struct OverridePair {
+    tag: LitStr,
+    path: SynPath,
+}
+
+impl Parse for OverridePair {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let tag: LitStr = input.parse()?;
+        let _: Token![=>] = input.parse()?;
+        let path: SynPath = input.parse()?;
+        Ok(Self { tag, path })
+    }
 }
 
 /// Parses a braced block of `CompPair`s from a `ParseStream`.
@@ -66,20 +86,30 @@ fn parse_component_braces(content: ParseStream) -> syn::Result<Vec<(String, SynP
 
 impl Parse for CompileMdxInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Pattern 1: { Ident => Path, ... }, "path.mdx" — direct braced block
+        // Pattern 1: { Ident => Path, ... } [, overrides = { "tag" => Path, ... }], "path.mdx"
+        // — direct braced block
         if input.peek(syn::token::Brace) {
             let content;
             syn::braced!(content in input);
             let components = parse_component_braces(&content)?;
+            let overrides = parse_optional_overrides(input)?;
             input.parse::<Token![,]>()?;
             let lit_str: LitStr = input.parse()?;
-            return Ok(Self::TwoArgs {
-                components,
-                lit_str,
-            });
+            return if overrides.is_empty() {
+                Ok(Self::TwoArgs {
+                    components,
+                    lit_str,
+                })
+            } else {
+                Ok(Self::TwoArgsWithOverrides {
+                    components,
+                    overrides,
+                    lit_str,
+                })
+            };
         }
 
-        // Pattern 2: mdx_components!{ Ident => Path, ... }, "path.mdx"
+        // Pattern 2: mdx_components!{ Ident => Path, ... } [, overrides = { "tag" => Path, ... }], "path.mdx"
         // — mdx_components! macro_rules! invocation.
         if input.peek(Ident) {
             let fork = input.fork();
@@ -93,12 +123,21 @@ impl Parse for CompileMdxInput {
                 let content;
                 syn::braced!(content in input);
                 let components = parse_component_braces(&content)?;
+                let overrides = parse_optional_overrides(input)?;
                 input.parse::<Token![,]>()?;
                 let lit_str: LitStr = input.parse()?;
-                return Ok(Self::TwoArgs {
-                    components,
-                    lit_str,
-                });
+                return if overrides.is_empty() {
+                    Ok(Self::TwoArgs {
+                        components,
+                        lit_str,
+                    })
+                } else {
+                    Ok(Self::TwoArgsWithOverrides {
+                        components,
+                        overrides,
+                        lit_str,
+                    })
+                };
             }
         }
 
@@ -108,15 +147,46 @@ impl Parse for CompileMdxInput {
     }
 }
 
+/// Parses an optional `overrides = { "tag" => Path, ... }` from a `ParseStream`.
+/// Returns an empty vector if no overrides keyword is found.
+fn parse_optional_overrides(
+    input: ParseStream,
+) -> syn::Result<Vec<(&'static str, SynPath)>> {
+    let fork = input.fork();
+    if !fork.peek(Token![,]) {
+        return Ok(Vec::new());
+    }
+    let _: Token![,] = fork.parse()?;
+    if !fork.peek(Ident) {
+        return Ok(Vec::new());
+    }
+    let maybe_kw: Ident = fork.parse()?;
+    if maybe_kw != "overrides" || !fork.peek(Token![=]) {
+        return Ok(Vec::new());
+    }
+    // Consume from the actual stream.
+    input.parse::<Token![,]>()?;
+    let _kw: Ident = input.parse()?;
+    input.parse::<Token![=]>()?;
+    let content;
+    syn::braced!(content in input);
+    let pairs = Punctuated::<OverridePair, Token![,]>::parse_terminated(&content)?;
+    Ok(pairs
+        .into_iter()
+        .map(|p| (Box::leak(p.tag.value().into_boxed_str()) as &'static str, p.path))
+        .collect())
+}
+
 // ---------------------------------------------------------------------------
 // mdx_page! input parsing
 // ---------------------------------------------------------------------------
 
-/// Input for `mdx_page!`: (`route_path`, `file_path`, [frontmatter = Type])
+/// Input for `mdx_page!`: (`route_path`, `file_path`, [frontmatter = Type], [overrides = {...}])
 struct MdxPageInput {
     route_path: LitStr,
     file_path: LitStr,
     frontmatter_type: Option<syn::Type>,
+    overrides: Option<Vec<(&'static str, SynPath)>>,
 }
 
 impl Parse for MdxPageInput {
@@ -126,24 +196,38 @@ impl Parse for MdxPageInput {
         let file_path: LitStr = input.parse()?;
 
         let mut frontmatter_type = None;
-        if input.peek(Token![,]) {
+        let mut overrides = None;
+
+        while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
-            // Parse `frontmatter = Type`
             let kw: Ident = input.parse()?;
-            if kw != "frontmatter" {
+            if kw == "frontmatter" {
+                input.parse::<Token![=]>()?;
+                frontmatter_type = Some(input.parse()?);
+            } else if kw == "overrides" {
+                input.parse::<Token![=]>()?;
+                let content;
+                syn::braced!(content in input);
+                let pairs = Punctuated::<OverridePair, Token![,]>::parse_terminated(&content)?;
+                overrides = Some(
+                    pairs
+                        .into_iter()
+                        .map(|p| (Box::leak(p.tag.value().into_boxed_str()) as &'static str, p.path))
+                        .collect(),
+                );
+            } else {
                 return Err(syn::Error::new(
                     kw.span(),
-                    "expected `frontmatter = Type`, found something else",
+                    "expected `frontmatter = Type` or `overrides = { ... }`, found something else",
                 ));
             }
-            input.parse::<Token![=]>()?;
-            frontmatter_type = Some(input.parse()?);
         }
 
         Ok(Self {
             route_path,
             file_path,
             frontmatter_type,
+            overrides,
         })
     }
 }
@@ -202,9 +286,11 @@ struct CompiledMdxResult {
 ///
 /// Used by both [`compile_mdx_file`] (`compile_mdx!`, `mdx_page!`) and
 /// [`generate_page_registration`] (`mdx_pages!`). The `label` parameter controls
-/// the prefix in error messages.
+/// the prefix in error messages. The `overrides` parameter registers HTML
+/// element → component substitutions (e.g., `"a" => custom_link`).
 fn parse_and_walk_mdx(
     components: &[(String, SynPath)],
+    overrides: &[(&'static str, SynPath)],
     content: &str,
     label: &str,
     span: Span,
@@ -217,8 +303,11 @@ fn parse_and_walk_mdx(
     // Extract frontmatter from root node.
     let frontmatter_content = extract_frontmatter(&root);
 
-    // Build WalkContext with component registry and error buffer.
-    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, span);
+    // Build override registry from the borrowed slice into owned storage
+    // that lives for the WalkContext lifetime.
+    let owned_overrides: Vec<(&'static str, SynPath)> =
+        overrides.iter().map(|(tag, path)| (*tag, path.clone())).collect();
+    let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, &owned_overrides, span);
 
     // Walk mdast into ViewWriter, skipping the frontmatter node.
     let mut writer = ViewWriter::new();
@@ -248,6 +337,7 @@ fn parse_and_walk_mdx(
 /// Shared logic: resolve path, read file, parse, extract frontmatter, walk.
 fn compile_mdx_file(
     components: &[(String, SynPath)],
+    overrides: &[(&'static str, SynPath)],
     path_str: &str,
     span: Span,
 ) -> Result<CompiledMdxResult, syn::Error> {
@@ -283,7 +373,7 @@ fn compile_mdx_file(
         syn::Error::new(span, format!("compile_mdx! cannot read '{path_str}': {e}"))
     })?;
 
-    parse_and_walk_mdx(components, &content, "compile_mdx!", span)
+    parse_and_walk_mdx(components, overrides, &content, "compile_mdx!", span)
 }
 
 // ---------------------------------------------------------------------------
@@ -336,17 +426,22 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         }
     };
 
-    let (components, lit_str) = match input {
+    let (components, lit_str, overrides) = match input {
         CompileMdxInput::TwoArgs {
             components,
             lit_str,
-        } => (components, lit_str),
-        CompileMdxInput::OneArg { lit_str } => (Vec::new(), lit_str),
+        } => (components, lit_str, Vec::<(&'static str, SynPath)>::new()),
+        CompileMdxInput::TwoArgsWithOverrides {
+            components,
+            overrides,
+            lit_str,
+        } => (components, lit_str, overrides),
+        CompileMdxInput::OneArg { lit_str } => (Vec::new(), lit_str, Vec::new()),
     };
 
     let path_str = lit_str.value();
 
-    let result = match compile_mdx_file(&components, &path_str, lit_str.span()) {
+    let result = match compile_mdx_file(&components, &overrides, &path_str, lit_str.span()) {
         Ok(r) => r,
         Err(e) => return e.to_compile_error().into(),
     };
@@ -427,7 +522,9 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let file_path = &input.file_path;
     let path_str = file_path.value();
 
-    let result = match compile_mdx_file(&[], &path_str, file_path.span()) {
+    let overrides: Vec<(&'static str, SynPath)> =
+        input.overrides.unwrap_or_default();
+    let result = match compile_mdx_file(&[], &overrides, &path_str, file_path.span()) {
         Ok(r) => r,
         Err(e) => return e.to_compile_error().into(),
     };
@@ -606,7 +703,7 @@ fn generate_page_registration(
     })?;
 
     let CompiledMdxResult { view_tokens, .. } =
-        parse_and_walk_mdx(&[], &content, "mdx_pages!", span)?;
+        parse_and_walk_mdx(&[], &[], &content, "mdx_pages!", span)?;
 
     // Generate unique identifiers from file stem.
     // Use snake_case for identifiers (valid Rust) but the route path
