@@ -388,10 +388,6 @@ pub(crate) fn walk_footnote_reference(
 /// Called after the main walk by `mdx_to_view` when footnotes were referenced.
 /// Each `<li>` contains the footnote definition content with a back-reference link.
 /// Numbering follows first-reference order per GFM spec.
-///
-/// This is a stub implementation that renders the `<ol>` wrapper.
-/// The full implementation (Task 3) populates `<li>` items with footnote content
-/// and back-reference links.
 pub(crate) fn walk_footnote_section(
     ctx: &WalkContext,
     footnote_order: &[String],

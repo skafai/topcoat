@@ -388,6 +388,7 @@ struct CompiledMdxResult {
     /// Excerpt tokens from the walker when `<!-- more -->` is present.
     /// Contains the view tokens for the content before the excerpt marker,
     /// produced by a separate ViewWriter.
+    #[allow(dead_code)]
     excerpt_tokens: Option<proc_macro2::TokenStream>,
 }
 
