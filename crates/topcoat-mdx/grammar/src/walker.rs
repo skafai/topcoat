@@ -145,6 +145,12 @@ pub fn walk_nodes(ctx: &WalkContext, mdast_nodes: &[markdown::mdast::Node]) -> N
 }
 
 /// Walks a single mdast node into zero or more view `Node`s.
+///
+/// # Panics
+/// Panics if an override is registered for a heading tag
+/// (verified via `ctx.overrides.iter().any(...)`) but `try_apply_override`
+/// returns `None` — this should not happen when the guard is used, as both
+/// check the same `ctx.overrides` slice.
 pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
         markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
