@@ -561,6 +561,13 @@ pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
 ///
 /// Returns `None` when no override is registered for `tag`, letting the
 /// caller construct the standard HTML element.
+///
+/// Note: only `AttributeKey::Ident` keys are converted to named props.
+/// Attributes with `AttributeKey::Expr` keys are silently dropped. This
+/// is not currently reachable from the markdown pipeline (the
+/// `create_attribute()` helper only produces `AttributeKey::Ident`), but
+/// callers who construct `Attributes` values manually should be aware of
+/// this limitation.
 pub fn try_apply_override(
     ctx: &WalkContext,
     tag: &str,
@@ -570,6 +577,8 @@ pub fn try_apply_override(
     let path = ctx.overrides.iter().find(|(t, _)| *t == tag)?.1.clone();
 
     // Convert Attribute nodes to NamedArg values.
+    // Only AttributeKey::Ident is handled; AttributeKey::Expr keys are
+    // silently dropped (see doc comment for rationale).
     let named_args: Vec<NamedArg> = attributes
         .items
         .iter()
