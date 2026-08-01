@@ -398,7 +398,7 @@ pub(crate) fn walk_footnote_section(
     footnote_order: &[String],
 ) -> Node {
     let mut li_nodes = Vec::new();
-    for (_idx, id) in footnote_order.iter().enumerate() {
+    for id in footnote_order.iter() {
         // Find the footnote definition content.
         let content = ctx
             .footnotes
