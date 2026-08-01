@@ -65,7 +65,8 @@ pub fn coerce_attr_value(value: &str, span: Span) -> Expr {
 ///
 /// Production code uses `try_find_override_path` + `build_override_component`
 /// to avoid consuming children when no override is registered. This function
-/// exists solely for unit tests that need a single-call variant.
+/// exists solely for unit tests that need a single-call variant, and delegates
+/// to the production builder so that both paths behave identically.
 #[cfg(test)]
 pub(crate) fn try_apply_override(
     ctx: &WalkContext,
@@ -73,37 +74,10 @@ pub(crate) fn try_apply_override(
     attributes: &Attributes,
     children: Nodes,
 ) -> Option<Node> {
-    let path = ctx.overrides.iter().find(|(t, _)| *t == tag)?.1.clone();
-
-    // Convert Attribute nodes to NamedArg values.
-    let named_args: Vec<NamedArg> = attributes
-        .items
-        .iter()
-        .filter_map(|attr_node| {
-            if let AttributeNode::Attribute(attr) = attr_node
-                && let AttributeKey::Ident(ident) = &attr.key
-            {
-                let name = ident.first.to_string();
-                let expr: Expr = match &attr.value {
-                    AttributeValue::LitStr(s) => coerce_attr_value(&s.value(), ctx.span),
-                    AttributeValue::Expr(_) => syn::parse_quote!(true),
-                };
-                return Some(NamedArg {
-                    ident: make_ident(&name),
-                    colon: Colon::default(),
-                    value: NamedArgValue::Expr(expr),
-                });
-            }
-            None
-        })
-        .collect();
-
-    Some(Node::Component(Component {
-        path,
-        paren_token: Paren::default(),
-        named_args,
-        children,
-    }))
+    let path = try_find_override_path(ctx, tag)?;
+    Some(build_override_component(
+        path, attributes, children, ctx.span,
+    ))
 }
 
 /// Returns the override path for the given tag without consuming children.
