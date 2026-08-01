@@ -131,9 +131,22 @@ Each `MdxIndexEntry` contains the following fields populated from frontmatter an
 A function named `mdx_index_{dir}` is emitted, where `{dir}` is the lowercase directory path with separators replaced by underscores. For `"content/blog"`, the accessor is `mdx_index_content_blog()`:
 
 ```rust,ignore
-let entries = mdx_index_content_blog();
-for entry in entries {
-    println!("{} ({})", entry.slug, entry.title.unwrap_or("Untitled"));
+use topcoat::{mdx::mdx_pages, Result, router::page, view::view};
+
+mdx_pages!("content/blog", prefix = "/blog");
+
+#[page]
+async fn blog_index() -> Result {
+    let entries = mdx_index_content_blog();
+    view! {
+        <ul>
+            for entry in entries {
+                <li>
+                    <a href=(entry.path)>(entry.title.unwrap_or(entry.slug))</a>
+                </li>
+            }
+        </ul>
+    }
 }
 ```
 
