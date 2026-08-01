@@ -17,9 +17,7 @@ async fn main() {
 // --- Router -----------------------------------------------------------------
 
 fn router() -> Router {
-    Router::builder()
-        .discover()
-        .build()
+    Router::builder().discover().build()
 }
 
 // --- Pages ------------------------------------------------------------------
