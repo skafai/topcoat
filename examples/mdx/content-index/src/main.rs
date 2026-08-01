@@ -108,7 +108,8 @@ async fn sitemap() -> Result<Response> {
     let mut xml = String::from(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     xml.push_str(r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">"#);
     for post in mdx_index_posts() {
-        write!(xml, "<url><loc>{}</loc></url>", post.path).expect("writing to a String cannot fail");
+        write!(xml, "<url><loc>{}</loc></url>", post.path)
+            .expect("writing to a String cannot fail");
     }
     xml.push_str("</urlset>");
 
