@@ -4,7 +4,7 @@ use topcoat::{
     Result,
     context::Cx,
     mdx::compile_mdx,
-    router::{layout, module_router, page, Router},
+    router::{layout, page, Router, RouterBuilderDiscoverExt},
     view::view,
 };
 
@@ -18,12 +18,12 @@ async fn main() {
 // --- Router -----------------------------------------------------------------
 
 fn router() -> Router {
-    module_router!().build()
+    Router::builder().discover().build()
 }
 
 // --- Layout -----------------------------------------------------------------
 
-#[layout]
+#[layout("/")]
 async fn root_layout(cx: &Cx, slot: Result) -> Result {
     view! {
         cx =>
@@ -51,7 +51,7 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
 
 // --- Pages ------------------------------------------------------------------
 
-#[page]
+#[page("/")]
 async fn home(_cx: &Cx) -> Result {
     view! {
         _cx =>
