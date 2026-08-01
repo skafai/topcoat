@@ -24,11 +24,7 @@ mod mock {
     /// Custom link component that accepts `href` prop (matching HTML <a> attr).
     #[component]
     pub async fn custom_link(href: &'static str, #[default] child: View) -> Result {
-        view! {
-            <a class="custom-link" href=(href)>
-                (child)
-            </a>
-        }
+        view! { <a class="custom-link" href=(href)>(child)</a> }
     }
 }
 
@@ -106,11 +102,7 @@ mod mock_all {
     /// Heading override component that adds an anchor class.
     #[component]
     pub async fn heading(id: &'static str, #[default] child: View) -> Result {
-        view! {
-            <div class="heading-override">
-                (child)
-            </div>
-        }
+        view! { <div class="heading-override">(child)</div> }
     }
 
     /// Image override component that wraps <img> in a figure.
@@ -127,31 +119,19 @@ mod mock_all {
     /// Code block override component.
     #[component]
     pub async fn code_block(data_lang: &'static str, #[default] child: View) -> Result {
-        view! {
-            <div class="code-block-override">
-                (child)
-            </div>
-        }
+        view! { <div class="code-block-override">(child)</div> }
     }
 
     /// Thematic break override component.
     #[component]
     pub async fn separator(#[default] child: View) -> Result {
-        view! {
-            <div class="separator-override">
-                (child)
-            </div>
-        }
+        view! { <div class="separator-override">(child)</div> }
     }
 
     /// Wrapper component that receives child: View.
     #[component]
     pub async fn article_wrapper(#[default] child: View) -> Result {
-        view! {
-            <article class="wrapped-article">
-                (child)
-            </article>
-        }
+        view! { <article class="wrapped-article">(child)</article> }
     }
 }
 
@@ -320,9 +300,7 @@ mod mdx_page_components {
 
     #[component]
     async fn callout_with_var(var: &'static str, #[default] child: View) -> Result {
-        view! {
-            <div class=(var)>(child)</div>
-        }
+        view! { <div class=(var)>(child)</div> }
     }
 
     /// Verify that `mdx_page!` with `components = {...}` compiles and passes

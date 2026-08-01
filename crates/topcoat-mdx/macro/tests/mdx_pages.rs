@@ -65,11 +65,7 @@ mod wrapper_test {
 
     #[component]
     async fn blog_wrapper(#[default] child: View) -> Result {
-        view! {
-            <article class="blog-layout">
-                (child)
-            </article>
-        }
+        view! { <article class="blog-layout">(child)</article> }
     }
 
     // mdx_pages! with wrapper = Path should compile.
@@ -96,16 +92,12 @@ mod components_and_overrides_test {
 
     #[component]
     async fn callout_component(#[default] child: View) -> Result {
-        view! {
-            <div class="callout">(child)</div>
-        }
+        view! { <div class="callout">(child)</div> }
     }
 
     #[component]
     async fn custom_link_override(href: &'static str, #[default] child: View) -> Result {
-        view! {
-            <a class="custom-link" href=(href)>(child)</a>
-        }
+        view! { <a class="custom-link" href=(href)>(child)</a> }
     }
 
     // mdx_pages! with components = {...} and overrides = {...} should compile.

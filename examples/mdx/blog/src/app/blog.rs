@@ -16,9 +16,7 @@ async fn blog() -> Result {
         <ul>
             for post in posts {
                 <li>
-                    <a href=(post.path)>
-                        (post.title.unwrap_or(post.slug))
-                    </a>
+                    <a href=(post.path)>(post.title.unwrap_or(post.slug))</a>
                     " — "
                     (post.date.unwrap_or("undated"))
                 </li>

@@ -45,6 +45,10 @@ async fn root_layout(slot: Result) -> Result {
 async fn home() -> Result {
     view! {
         <h1>"Welcome"</h1>
-        <p>"Check out the " <a href="/blog">"blog"</a> "."</p>
+        <p>
+            "Check out the "
+            <a href="/blog">"blog"</a>
+            "."
+        </p>
     }
 }

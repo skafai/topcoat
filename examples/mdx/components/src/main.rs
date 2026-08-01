@@ -25,22 +25,24 @@ fn router() -> Router {
 #[page("/")]
 async fn home() -> Result {
     view! {
-            <html>
-                <head>
-                    <title>"MDX Components"</title>
-                    topcoat::dev::script()
-                </head>
-                <body>
-                    <h1>"MDX Components"</h1>
-                    <p>"This example demonstrates how to use custom components in MDX pages."</p>
-                    <ul>
-                        <li><a href="/callouts">"Callouts"</a></li>
-                        <li><a href="/wrappers">"Wrappers"</a></li>
-                        <li><a href="/self-closing">"Self-closing"</a></li>
-                        <li><a href="/nested">"Nested"</a></li>
-                    </ul>
-                </body>
-            </html>
+        <html>
+            <head>
+                <title>"MDX Components"</title>
+                topcoat::dev::script()
+            </head>
+            <body>
+                <h1>"MDX Components"</h1>
+                <p>
+                    "This example demonstrates how to use custom components in MDX pages."
+                </p>
+                <ul>
+                    <li><a href="/callouts">"Callouts"</a></li>
+                    <li><a href="/wrappers">"Wrappers"</a></li>
+                    <li><a href="/self-closing">"Self-closing"</a></li>
+                    <li><a href="/nested">"Nested"</a></li>
+                </ul>
+            </body>
+        </html>
     }
 }
 
