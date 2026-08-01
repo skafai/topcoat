@@ -1100,7 +1100,10 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         }
 
         // Security: verify resolved path stays within manifest directory (T-03-04).
-        if !file_path.starts_with(&canonical_manifest) {
+        // Canonicalize first so that unresolved `..` components cannot bypass
+        // the starts_with check against the canonical manifest path.
+        let resolved_path = file_path.canonicalize().unwrap_or_else(|_| file_path.to_path_buf());
+        if !resolved_path.starts_with(&canonical_manifest) {
             results.push(
                 syn::Error::new(
                     span,
