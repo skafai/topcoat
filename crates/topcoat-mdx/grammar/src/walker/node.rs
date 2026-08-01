@@ -24,7 +24,7 @@ use super::WalkContext;
 /// Blocks `javascript:`, `vbscript:`, and ALL `data:` URIs (including
 /// `data:image/svg+xml` which can execute JS via SVG event handlers).
 pub(crate) fn is_safe_url(url: &str) -> bool {
-    let cleaned: String = url.chars().filter(|c| *c != '\u{0000}').collect();
+    let cleaned: String = url.chars().filter(|c| !c.is_control()).collect();
     let trimmed = cleaned.trim().to_ascii_lowercase();
     !trimmed.starts_with("javascript:")
         && !trimmed.starts_with("vbscript:")
@@ -440,6 +440,19 @@ mod tests {
         assert!(!is_safe_url("java\x00script:alert(1)"));
         assert!(!is_safe_url("\x00\x00vbscript:msgBox(1)"));
         assert!(!is_safe_url("\x00data:text/html,<script>"));
+    }
+
+    #[test]
+    fn is_safe_url_blocks_c0_control_bypass() {
+        // C0 control chars (tab, CR, etc.) inside the scheme bypass filters
+        // that only strip null bytes. Browsers strip C0 controls per the
+        // WHATWG URL Standard.
+        assert!(!is_safe_url("java\tscript:alert(1)"));
+        assert!(!is_safe_url("java\rscript:alert(1)"));
+        assert!(!is_safe_url("java\nscript:alert(1)"));
+        assert!(!is_safe_url("\tjavascript:alert(1)"));
+        assert!(!is_safe_url("\rvbscript:msgBox(1)"));
+        assert!(!is_safe_url("\ndata:text/html,evil"));
     }
 
     #[test]
