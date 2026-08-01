@@ -6,7 +6,8 @@ use syn::{Ident, LitStr, parse_quote};
 use topcoat_view_grammar::{
     attributes::{Attribute, AttributeKey, AttributeNode, AttributeValue, Attributes},
     view::{
-        ClosingTag, Element, ElementName, HtmlIdent, Node, Nodes, OpeningTag, SelfClosingTag,
+        ClosingTag, Element, ElementName, HtmlIdent, HtmlIdentPart, HtmlIdentSeparator,
+        HtmlIdentSegment, Node, Nodes, OpeningTag, SelfClosingTag,
     },
 };
 
@@ -98,6 +99,30 @@ pub(crate) fn self_closing_element(tag: &str, attributes: Attributes) -> Element
     }
 }
 
+/// Creates a key=value attribute where the key may contain hyphens
+/// (e.g. `data-lang`, `data-title`). Splits on `-` and builds an
+/// `HtmlIdent` with `first` + `rest` segments.
+pub(crate) fn create_attribute_data(key: &str, value: &str) -> Attribute {
+    let segments: Vec<&str> = key.splitn(2, '-').collect();
+    let rest: Vec<HtmlIdentSegment> = if segments.len() == 2 && !segments[1].is_empty() {
+        let dash: syn::token::Minus = parse_quote!(-);
+        vec![HtmlIdentSegment {
+            separator: HtmlIdentSeparator::Dash(dash),
+            part: HtmlIdentPart::Ident(Ident::new(segments[1], Span::call_site())),
+        }]
+    } else {
+        Vec::new()
+    };
+    Attribute {
+        key: AttributeKey::Ident(HtmlIdent {
+            first: make_ident(segments[0]),
+            rest,
+        }),
+        eq: parse_quote!(=),
+        value: AttributeValue::LitStr(LitStr::new(value, Span::call_site())),
+    }
+}
+
 /// Creates a key=value attribute.
 pub(crate) fn create_attribute(key: &str, value: &str) -> Attribute {
     Attribute {
@@ -139,6 +164,57 @@ pub(crate) fn slugify(text: &str) -> String {
     let slug = text.to_kebab_case().replace("--", "-");
     let trimmed = slug.trim_matches('-');
     trimmed.to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Code block metadata
+// ---------------------------------------------------------------------------
+
+/// Parsed metadata from a fenced code block's info string.
+///
+/// `lang` comes from `Code.lang` (the first token). The remaining fields
+/// come from `Code.meta` (everything after the language identifier):
+/// `{1,3}` line ranges, `title="..."`, and `/term/` emphasis.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CodeMeta {
+    /// The language identifier (first token of the fence info string).
+    pub lang: Option<String>,
+    /// Line highlight ranges (e.g. `{1,3}` or `{1-5}`).
+    pub lines: Option<String>,
+    /// Title string (e.g. `title="file.rs"`).
+    pub title: Option<String>,
+    /// Term emphasis patterns (e.g. `/keyword/`).
+    pub emphasis: Vec<String>,
+}
+
+/// Parses a fenced code block into a `CodeMeta` struct.
+///
+/// Reads `code.lang` for the language and tokenizes `code.meta` for
+/// line ranges, title, and term emphasis.
+pub(crate) fn parse_code_meta(code: &markdown::mdast::Code) -> CodeMeta {
+    let lang = code.lang.clone();
+    let mut lines: Vec<String> = Vec::new();
+    let mut title: Option<String> = None;
+    let mut emphasis: Vec<String> = Vec::new();
+
+    if let Some(meta) = &code.meta {
+        for token in meta.split_whitespace() {
+            if token.starts_with('{') && token.ends_with('}') {
+                lines.push(token[1..token.len() - 1].to_string());
+            } else if let Some(t) = token.strip_prefix("title=\"").and_then(|s| s.strip_suffix('"')) {
+                title = Some(t.to_string());
+            } else if token.starts_with('/') && token.ends_with('/') && token.len() > 1 {
+                emphasis.push(token[1..token.len() - 1].to_string());
+            }
+        }
+    }
+
+    CodeMeta {
+        lang,
+        lines: if lines.is_empty() { None } else { Some(lines.join(",")) },
+        title,
+        emphasis,
+    }
 }
 
 #[cfg(test)]
@@ -191,5 +267,88 @@ mod tests {
         let attrs = with_attributes(vec![create_attribute("class", "btn")]);
         assert_eq!(attrs.items.len(), 1);
         assert!(matches!(attrs.items[0], AttributeNode::Attribute(_)));
+    }
+
+    // ---- parse_code_meta tests ----
+
+    #[test]
+    fn code_meta_language_only() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: Some("rust".to_string()),
+            meta: None,
+            value: "fn main() {}".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert_eq!(meta.lang, Some("rust".to_string()));
+        assert!(meta.lines.is_none());
+        assert!(meta.title.is_none());
+        assert!(meta.emphasis.is_empty());
+    }
+
+    #[test]
+    fn code_meta_with_line_ranges() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: Some("python".to_string()),
+            meta: Some("{1,3} {5-7}".to_string()),
+            value: "print()".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert_eq!(meta.lang, Some("python".to_string()));
+        assert_eq!(meta.lines, Some("1,3,5-7".to_string()));
+    }
+
+    #[test]
+    fn code_meta_with_title() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: Some("rust".to_string()),
+            meta: Some("title=\"main.rs\"".to_string()),
+            value: "fn main() {}".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert_eq!(meta.title, Some("main.rs".to_string()));
+    }
+
+    #[test]
+    fn code_meta_with_emphasis() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: Some("bash".to_string()),
+            meta: Some("/sudo/ /password/".to_string()),
+            value: "sudo apt install".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert_eq!(meta.emphasis, vec!["sudo".to_string(), "password".to_string()]);
+    }
+
+    #[test]
+    fn code_meta_combined() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: Some("rust".to_string()),
+            meta: Some("{1,3} title=\"file.rs\" /TODO/".to_string()),
+            value: "fn main() {}".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert_eq!(meta.lang, Some("rust".to_string()));
+        assert_eq!(meta.lines, Some("1,3".to_string()));
+        assert_eq!(meta.title, Some("file.rs".to_string()));
+        assert_eq!(meta.emphasis, vec!["TODO".to_string()]);
+    }
+
+    #[test]
+    fn code_meta_no_language() {
+        let code = markdown::mdast::Code {
+            position: None,
+            lang: None,
+            meta: None,
+            value: "text".to_string(),
+        };
+        let meta = parse_code_meta(&code);
+        assert!(meta.lang.is_none());
+        assert!(meta.lines.is_none());
+        assert!(meta.title.is_none());
     }
 }
