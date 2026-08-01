@@ -304,3 +304,31 @@ mod wrapper {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// mdx_page! with components wiring test
+// ---------------------------------------------------------------------------
+
+mod mdx_page_components {
+    use super::*;
+    use topcoat::mdx::mdx_page;
+
+    #[component]
+    async fn callout_with_var(var: &'static str, #[default] child: View) -> Result {
+        view! {
+            <div class=(var)>(child)</div>
+        }
+    }
+
+    /// Verify that mdx_page! with components = {...} compiles and passes
+    /// the component registry through to the walker.
+    #[test]
+    fn mdx_page_with_components_compiles() {
+        mdx_page!(
+            "/components-wiring-test",
+            "tests/fixtures/components_basic.mdx",
+            components = { Callout => callout_with_var }
+        );
+        // Compilation proves components were threaded through compile_mdx_file.
+    }
+}

@@ -292,10 +292,15 @@ impl Parse for MdxPageInput {
 // mdx_pages! input parsing
 // ---------------------------------------------------------------------------
 
-/// Input for `mdx_pages!`: (`directory_path`, prefix = "/optional/prefix")
+/// Input for `mdx_pages!`: (`directory_path`, prefix = "/optional/prefix",
+/// frontmatter = Type, components = {...}, overrides = {...}, wrapper = Path)
 struct MdxPagesInput {
     directory_path: LitStr,
     prefix: Option<LitStr>,
+    frontmatter_type: Option<syn::Type>,
+    components: Option<Vec<(String, SynPath)>>,
+    overrides: Option<Vec<(&'static str, SynPath)>>,
+    wrapper: Option<SynPath>,
 }
 
 impl Parse for MdxPagesInput {
@@ -303,23 +308,59 @@ impl Parse for MdxPagesInput {
         let directory_path: LitStr = input.parse()?;
 
         let mut prefix = None;
-        if input.peek(Token![,]) {
+        let mut frontmatter_type = None;
+        let mut components = None;
+        let mut overrides = None;
+        let mut wrapper = None;
+
+        while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
-            // Parse `prefix = "/some/path"`
             let kw: Ident = input.parse()?;
-            if kw != "prefix" {
+            if kw == "prefix" {
+                input.parse::<Token![=]>()?;
+                prefix = Some(input.parse()?);
+            } else if kw == "frontmatter" {
+                input.parse::<Token![=]>()?;
+                frontmatter_type = Some(input.parse()?);
+            } else if kw == "components" {
+                input.parse::<Token![=]>()?;
+                let content;
+                syn::braced!(content in input);
+                components = Some(parse_component_braces(&content)?);
+            } else if kw == "overrides" {
+                input.parse::<Token![=]>()?;
+                let content;
+                syn::braced!(content in input);
+                let pairs = Punctuated::<OverridePair, Token![,]>::parse_terminated(&content)?;
+                overrides = Some(
+                    pairs
+                        .into_iter()
+                        .map(|p| {
+                            (
+                                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                                p.path,
+                            )
+                        })
+                        .collect(),
+                );
+            } else if kw == "wrapper" {
+                input.parse::<Token![=]>()?;
+                wrapper = Some(input.parse()?);
+            } else {
                 return Err(syn::Error::new(
                     kw.span(),
-                    "expected `prefix = \"/path\"`, found something else",
+                    "expected `prefix = \"/path\"`, `frontmatter = Type`, `components = { ... }`, `overrides = { ... }`, or `wrapper = Path`",
                 ));
             }
-            input.parse::<Token![=]>()?;
-            prefix = Some(input.parse()?);
         }
 
         Ok(Self {
             directory_path,
             prefix,
+            frontmatter_type,
+            components,
+            overrides,
+            wrapper,
         })
     }
 }
@@ -666,7 +707,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
             {
                 use #topcoat_view::Component;
                 let props = #wrapper_path::props_builder().child(#view_tokens).build();
-                Component::render(#wrapper_path::default(), cx, props).await
+                Component::render(#wrapper_path::default(), __cx, props).await
             }
         }
     } else {
@@ -723,7 +764,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
             file_path.span(),
         );
         quote! {
-            #topcoat_router::request::extensions(cx).insert(#fm_const_name.clone());
+            #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
         }
     } else {
         quote! {}
@@ -736,7 +777,7 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
             #fm_const_and_insert
 
             fn #render_fn_name(
-                cx: &#topcoat_context::Cx,
+                __cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
             ) -> ::std::pin::Pin<
                 Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
@@ -822,11 +863,15 @@ fn derive_route_path(scan_dir: &Path, file_path: &Path, prefix: Option<&str>) ->
 
 /// Generates page registration tokens for a single `.mdx` or `.md` file.
 ///
-/// Mirrors the logic in `mdx_page!` but without frontmatter type arguments
-/// (since `mdx_pages!` does not carry per-file type declarations).
+/// Mirrors the logic in `mdx_page!` but supports frontmatter type, components,
+/// overrides, and wrapper arguments from `mdx_pages!`.
 fn generate_page_registration(
     file_path: &Path,
     route_path: &str,
+    components: &[(String, SynPath)],
+    overrides: &[(&'static str, SynPath)],
+    wrapper: Option<&SynPath>,
+    frontmatter_type: Option<&syn::Type>,
     span: Span,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     let path_display = file_path.to_string_lossy();
@@ -844,8 +889,7 @@ fn generate_page_registration(
         )
     })?;
 
-    let CompiledMdxResult { view_tokens, .. } =
-        parse_and_walk_mdx(&[], &[], None, &content, "mdx_pages!", span)?;
+    let result = parse_and_walk_mdx(components, overrides, wrapper, &content, "mdx_pages!", span)?;
 
     // Generate unique identifiers from file stem.
     // Use snake_case for identifiers (valid Rust) but the route path
@@ -860,17 +904,74 @@ fn generate_page_registration(
     let unit_name = Ident::new(&format!("__mdx_pages_{file_stem}"), span);
     let route_path_lit = LitStr::new(route_path, span);
 
+    let view_tokens = &result.view_tokens;
+
+    // Frontmatter const (when frontmatter_type is provided and content has frontmatter).
+    let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
+        (&result.frontmatter_content, frontmatter_type)
+    {
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+
+        let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
+            serde_saphyr::from_str(content).unwrap_or_else(|e| {
+                panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
+            })
+        } else {
+            toml::from_str(content).unwrap_or_else(|e| {
+                panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
+            })
+        };
+
+        match value_to_expr(&deserialized, Some(fm_type), span) {
+            Ok(expr) => {
+                quote! {
+                    #[allow(clippy::approx_constant)]
+                    const #fm_const_name: #fm_type = #expr;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    } else {
+        quote! {}
+    };
+
+    let fm_insert = if result.frontmatter_content.is_some() && frontmatter_type.is_some() {
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+        quote! {
+            #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
+        }
+    } else {
+        quote! {}
+    };
+
+    // Apply wrapper if requested.
+    let render_body = if result.has_wrapper {
+        let wrapper_path = result.wrapper_path.as_ref().unwrap();
+        quote! {
+            {
+                use #topcoat_view::Component;
+                let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                Component::render(#wrapper_path::default(), __cx, props).await
+            }
+        }
+    } else {
+        quote! { Ok(#view_tokens?) }
+    };
+
     Ok(quote! {
         #[allow(clippy::needless_question_mark, clippy::approx_constant)]
         const _: () = {
+            #fm_const_and_insert
+
             fn #render_fn_name(
-                cx: &#topcoat_context::Cx,
+                __cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
             ) -> ::std::pin::Pin<
                 Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
                 ::std::boxed::Box::pin(async move {
-                    Ok(#view_tokens?)
+                    #fm_insert
+                    #render_body
                 })
             }
 
@@ -974,6 +1075,8 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     };
 
     let prefix = input.prefix.as_ref().map(syn::LitStr::value);
+    let components: Vec<(String, SynPath)> = input.components.unwrap_or_default();
+    let overrides: Vec<(&'static str, SynPath)> = input.overrides.unwrap_or_default();
 
     // Use ignore::Walk to find all .mdx files, respecting .gitignore.
     let mut results = Vec::new();
@@ -1014,7 +1117,15 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         let route_path = derive_route_path(&canonical_scan_dir, file_path, prefix.as_deref());
 
         // Generate registration tokens for this file.
-        match generate_page_registration(file_path, &route_path, span) {
+        match generate_page_registration(
+            file_path,
+            &route_path,
+            &components,
+            &overrides,
+            input.wrapper.as_ref(),
+            input.frontmatter_type.as_ref(),
+            span,
+        ) {
             Ok(ts) => results.push(ts),
             Err(e) => results.push(e.to_compile_error()),
         }
