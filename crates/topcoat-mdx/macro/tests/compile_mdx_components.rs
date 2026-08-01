@@ -1,10 +1,6 @@
 #![allow(clippy::approx_constant)]
 
-use topcoat::{
-    context::CxTestBuilder,
-    mdx::compile_mdx,
-};
-use topcoat::view as topcoat_view_module;
+use topcoat::{context::CxTestBuilder, mdx::compile_mdx, view as topcoat_view_module};
 use topcoat_view_module::{View, component, view};
 
 type Result<T = View> = topcoat::Result<T>;
@@ -78,12 +74,7 @@ mod mock {
 
     // --- Config: multiple prop types ---
     #[component]
-    pub async fn config(
-        enabled: bool,
-        count: i64,
-        ratio: f64,
-        label: &'static str,
-    ) -> Result {
+    pub async fn config(enabled: bool, count: i64, ratio: f64, label: &'static str) -> Result {
         view! {
             <div class="mdx-config"
                 data-enabled=(enabled.to_string())
@@ -129,7 +120,8 @@ mod components_basic {
         let view = compile_mdx_with_cx!(cx =>
             mdx_components! { Callout => mock::callout },
             "tests/fixtures/components_basic.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         // Should have the heading from markdown.
@@ -192,7 +184,10 @@ mod md_backward_compat {
 
         assert!(html.contains("<h2>"), "should have <h2>. Got:\n{html}");
         assert!(html.contains("<pre>"), "should have <pre>. Got:\n{html}");
-        assert!(html.contains("<blockquote>"), "should have <blockquote>. Got:\n{html}");
+        assert!(
+            html.contains("<blockquote>"),
+            "should have <blockquote>. Got:\n{html}"
+        );
     }
 }
 
@@ -200,6 +195,7 @@ mod md_backward_compat {
 
 mod unknown_component_error {
     use std::path::Path;
+
     use topcoat_mdx_grammar::walker::WalkContext;
     use topcoat_view_grammar::view::ViewWriter;
 
@@ -233,7 +229,9 @@ After";
             "should have errors for unknown component"
         );
         assert!(
-            errors.iter().any(|e| e.contains("unknown component 'UnknownWidget'")),
+            errors
+                .iter()
+                .any(|e| e.contains("unknown component 'UnknownWidget'")),
             "should contain 'unknown component' message. Errors: {:?}",
             *errors
         );
@@ -306,7 +304,8 @@ mod components_nested {
                 NestedInner => mock::nested_inner,
             },
             "tests/fixtures/components_nested.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         assert!(
@@ -340,7 +339,8 @@ mod components_self_closing {
         let view = compile_mdx_with_cx!(cx =>
             mdx_components! { Divider => mock::divider },
             "tests/fixtures/components_self_closing.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         // Empty tag pair <Divider></Divider> should produce component output.
@@ -376,7 +376,8 @@ mod components_bare_attrs {
         let view = compile_mdx_with_cx!(cx =>
             mdx_components! { BareAttr => mock::bare_attr },
             "tests/fixtures/components_bare_attrs.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         // Bare attribute `dismissible` should coerce to true.
@@ -412,7 +413,8 @@ mod components_prop_types {
         let view = compile_mdx_with_cx!(cx =>
             mdx_components! { Config => mock::config },
             "tests/fixtures/components_prop_types.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         assert!(
@@ -458,7 +460,8 @@ mod components_mixed_content {
         let view = compile_mdx_with_cx!(cx =>
             mdx_components! { Badge => mock::badge },
             "tests/fixtures/components_mixed_content.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         // Should have markdown heading and paragraphs.
@@ -498,7 +501,8 @@ mod components_child_content {
                 Badge => mock::badge,
             },
             "tests/fixtures/components_child_content.mdx"
-        ).expect("view should render successfully");
+        )
+        .expect("view should render successfully");
         let html = view.render(&cx);
 
         // Wrapper should render its outer section.
