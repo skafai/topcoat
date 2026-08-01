@@ -4,8 +4,15 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
-# Stub -- replaced by 05-05 plan
 [dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+topcoat = { workspace = true, features = ["mdx", "serve", "view", "router", "font-fontsource", "icon-iconify", "tailwind", "ui", "asset", "discover"] }
+
+[build-dependencies]
+topcoat = { path = "../../../crates/topcoat/", default-features = false, features = ["icon-iconify", "tailwind"] }
+
+[dev-dependencies]
+topcoat-ui.workspace = true
 
 [lints]
 workspace = true
