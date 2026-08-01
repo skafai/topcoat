@@ -71,7 +71,7 @@ mod blog {
             <ul>
                 for post in posts {
                     <li>
-                        <a href=(format!("/blog/{slug}", slug = post.slug))>
+                        <a href=(post.path)>
                             (post.title.unwrap_or(post.slug))
                         </a>
                         " — "
