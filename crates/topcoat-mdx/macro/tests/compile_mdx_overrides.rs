@@ -321,7 +321,7 @@ mod mdx_page_components {
         }
     }
 
-    /// Verify that mdx_page! with components = {...} compiles and passes
+    /// Verify that `mdx_page!` with `components = {...}` compiles and passes
     /// the component registry through to the walker.
     #[test]
     fn mdx_page_with_components_compiles() {
