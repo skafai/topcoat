@@ -1,0 +1,364 @@
+use std::path::Path;
+
+use heck::ToKebabCase;
+use proc_macro2::Span;
+use quote::quote;
+use syn::{Ident, LitStr, Path as SynPath};
+use topcoat_core_grammar::paths::{
+    topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
+};
+use topcoat_mdx_grammar::{
+    parse::get_parse_options,
+    walker::{FrontmatterFormat, extract_frontmatter},
+};
+
+use crate::compile::parse_and_walk_mdx;
+use crate::convert::value_to_expr;
+
+// ---------------------------------------------------------------------------
+// mdx_pages! helpers
+// ---------------------------------------------------------------------------
+
+/// Derives a route path for a discovered `.mdx` or `.md` file.
+///
+/// Given the scan directory, the resolved file path, and an optional prefix,
+/// computes the route path: applies the prefix, then appends the relative
+/// directory structure and kebab-cased filename stem.
+pub(crate) fn derive_route_path(scan_dir: &Path, file_path: &Path, prefix: Option<&str>) -> String {
+    let relative = file_path
+        .strip_prefix(scan_dir)
+        .unwrap_or(file_path)
+        .to_string_lossy();
+
+    // Remove .mdx or .md extension.
+    let mut route = relative.into_owned();
+    if let Some(ext) = std::path::Path::new(&route)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
+        if ext.eq_ignore_ascii_case("mdx") {
+            route.truncate(route.len() - 4);
+        } else if ext.eq_ignore_ascii_case("md") {
+            route.truncate(route.len() - 2);
+        }
+    }
+
+    // Kebab-case the filename stem (last path component).
+    let parts: Vec<&str> = route.rsplitn(2, '/').collect();
+    let (dir_part, stem) = if parts.len() == 2 {
+        (Some(parts[1]), parts[0])
+    } else {
+        (None, parts[0])
+    };
+    let kebab_stem = stem.to_kebab_case();
+
+    let mut path_parts: Vec<String> = Vec::new();
+    if let Some(dir) = dir_part {
+        let kebab_dir: Vec<String> = dir.split('/').map(str::to_kebab_case).collect();
+        path_parts.push(kebab_dir.join("/"));
+    }
+    path_parts.push(kebab_stem);
+
+    let relative_route = path_parts.join("/");
+
+    match prefix {
+        Some(p) => format!("{}/{}", p.trim_end_matches('/'), relative_route),
+        None => format!("/{relative_route}"),
+    }
+}
+
+/// A scanned page entry: file path, parsed content, and frontmatter data.
+pub(crate) struct MdxPageEntry {
+    pub(crate) file_path: std::path::PathBuf,
+}
+
+/// Scans a directory for `.mdx` and `.md` files, returning valid entries.
+pub(crate) fn scan_directory(
+    canonical_scan_dir: &Path,
+    canonical_manifest: &Path,
+    _span: Span,
+) -> Vec<MdxPageEntry> {
+    let mut entries = Vec::new();
+
+    for entry in ignore::Walk::new(canonical_scan_dir) {
+        let Ok(entry) = entry else {
+            continue;
+        };
+
+        let file_path = entry.path().to_path_buf();
+
+        // Only process .mdx and .md files.
+        let is_target = file_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("mdx") || ext.eq_ignore_ascii_case("md"));
+        if !is_target {
+            continue;
+        }
+
+        // Security: verify resolved path stays within manifest directory (T-03-04).
+        let resolved_path = file_path.canonicalize().unwrap_or_else(|_| file_path.clone());
+        if !resolved_path.starts_with(canonical_manifest) {
+            continue;
+        }
+
+        entries.push(MdxPageEntry { file_path });
+    }
+
+    entries
+}
+
+/// Builds index entries from scanned pages.
+///
+/// For each page, extracts title/date/tags/excerpt from frontmatter
+/// using generic serde_value::Value parsing.
+pub(crate) fn build_index(
+    entries: &[MdxPageEntry],
+    _span: Span,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut index_items = Vec::new();
+
+    for entry in entries {
+        let resolved = entry.file_path.canonicalize().unwrap_or_else(|_| {
+            entry.file_path.clone()
+        });
+
+        let content = match std::fs::read_to_string(&resolved) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Parse the markdown content.
+        let options = get_parse_options();
+        let root = match markdown::to_mdast(&content, &options) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        // Extract frontmatter data.
+        let frontmatter = extract_frontmatter(&root);
+
+        // Derive slug from file stem using kebab-case.
+        let slug = resolved
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("page")
+            .to_kebab_case();
+        // Intentional leak: slugs are small and the index array requires
+        // &'static str. Leaking avoids complex lifetime management.
+        let slug_str: &'static str = Box::leak(slug.into_boxed_str());
+
+        // Extract known fields from frontmatter using generic deserialization.
+        let (title_expr, date_expr, excerpt_expr, tags_expr) =
+            if let Some((fm_content, format)) = &frontmatter {
+                let deserialized: serde_value::Value =
+                    if matches!(format, FrontmatterFormat::Yaml) {
+                        serde_saphyr::from_str(fm_content).unwrap_or_else(|e| {
+                            panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
+                        })
+                    } else {
+                        toml::from_str(fm_content).unwrap_or_else(|e| {
+                            panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
+                        })
+                    };
+
+                let title = extract_string_field(&deserialized, "title");
+                let date = extract_string_field(&deserialized, "date");
+                let excerpt = extract_string_field(&deserialized, "excerpt");
+                let tags = extract_tags_field(&deserialized);
+
+                (
+                    title.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    date.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    excerpt.map(|s| quote! { Some(#s) }).unwrap_or(quote! { None }),
+                    tags,
+                )
+            } else {
+                (
+                    quote! { None },
+                    quote! { None },
+                    quote! { None },
+                    quote! { &[] },
+                )
+            };
+
+        index_items.push(quote! {
+            #topcoat_mdx::MdxIndexEntry {
+                slug: #slug_str,
+                title: #title_expr,
+                date: #date_expr,
+                excerpt: #excerpt_expr,
+                tags: #tags_expr,
+            }
+        });
+    }
+
+    index_items
+}
+
+/// Extract a string field from a serde_value::Value Map.
+fn extract_string_field(value: &serde_value::Value, field: &str) -> Option<LitStr> {
+    if let serde_value::Value::Map(entries) = value {
+        if let Some(inner) = entries.get(&serde_value::Value::String(field.to_string())) {
+            if let serde_value::Value::String(s) = inner {
+                return Some(LitStr::new(s, Span::call_site()));
+            }
+        }
+    }
+    None
+}
+
+/// Extract a tags field (sequence of strings) from a serde_value::Value Map.
+fn extract_tags_field(value: &serde_value::Value) -> proc_macro2::TokenStream {
+    if let serde_value::Value::Map(entries) = value {
+        if let Some(serde_value::Value::Seq(items)) =
+            entries.get(&serde_value::Value::String("tags".to_string()))
+        {
+            let tag_lits: Vec<LitStr> = items
+                .iter()
+                .filter_map(|v| {
+                    if let serde_value::Value::String(s) = v {
+                        Some(LitStr::new(s, Span::call_site()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if !tag_lits.is_empty() {
+                return quote! { &#(#tag_lits),* };
+            }
+        }
+    }
+    quote! { &[] }
+}
+
+/// Generates page registration tokens for a single `.mdx` or `.md` file.
+///
+/// Mirrors the logic in `mdx_page!` but supports frontmatter type, components,
+/// overrides, and wrapper arguments from `mdx_pages!`.
+pub(crate) fn generate_page_registration(
+    file_path: &Path,
+    route_path: &str,
+    components: &[(String, SynPath)],
+    overrides: &[(&'static str, SynPath)],
+    wrapper: Option<&SynPath>,
+    frontmatter_type: Option<&syn::Type>,
+    span: Span,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let path_display = file_path.to_string_lossy();
+    let resolved = file_path.canonicalize().map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! cannot resolve path '{path_display}': {e}"),
+        )
+    })?;
+
+    let content = std::fs::read_to_string(&resolved).map_err(|e| {
+        syn::Error::new(
+            span,
+            format!("mdx_pages! cannot read '{path_display}': {e}"),
+        )
+    })?;
+
+    let result = parse_and_walk_mdx(components, overrides, wrapper, &content, "mdx_pages!", span)?;
+
+    // Generate unique identifiers from file stem.
+    // Use snake_case for identifiers (valid Rust) but the route path
+    // (passed as argument) may use kebab-case.
+    let file_stem = resolved
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("page")
+        .to_kebab_case()
+        .replace('-', "_");
+    let render_fn_name = Ident::new(&format!("__mdx_pages_render_{file_stem}"), span);
+    let unit_name = Ident::new(&format!("__mdx_pages_{file_stem}"), span);
+    let route_path_lit = LitStr::new(route_path, span);
+
+    let view_tokens = &result.view_tokens;
+
+    // Frontmatter const (when frontmatter_type is provided and content has frontmatter).
+    let fm_const_and_insert = if let (Some((content, format)), Some(fm_type)) =
+        (&result.frontmatter_content, frontmatter_type)
+    {
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+
+        let deserialized: serde_value::Value = if matches!(format, FrontmatterFormat::Yaml) {
+            serde_saphyr::from_str(content).unwrap_or_else(|e| {
+                panic!("mdx_pages! failed to deserialize frontmatter YAML: {e}")
+            })
+        } else {
+            toml::from_str(content).unwrap_or_else(|e| {
+                panic!("mdx_pages! failed to deserialize frontmatter TOML: {e}")
+            })
+        };
+
+        let expr = value_to_expr(&deserialized, Some(fm_type), span)?;
+        quote! {
+            #[allow(clippy::approx_constant)]
+            const #fm_const_name: #fm_type = #expr;
+        }
+    } else {
+        quote! {}
+    };
+
+    let fm_insert = if result.frontmatter_content.is_some() && frontmatter_type.is_some() {
+        let fm_const_name = Ident::new(&format!("__MDX_PAGES_FRONTMATTER_{file_stem}"), span);
+        quote! {
+            #topcoat_router::request::extensions(__cx).insert(#fm_const_name.clone());
+        }
+    } else {
+        quote! {}
+    };
+
+    // Apply wrapper if requested.
+    let render_body = if result.has_wrapper {
+        let wrapper_path = result.wrapper_path.as_ref().unwrap();
+        quote! {
+            {
+                use #topcoat_view::Component;
+                let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                Component::render(#wrapper_path::default(), __cx, props).await
+            }
+        }
+    } else {
+        quote! { Ok(#view_tokens?) }
+    };
+
+    Ok(quote! {
+        #[allow(clippy::needless_question_mark, clippy::approx_constant)]
+        const _: () = {
+            #fm_const_and_insert
+
+            fn #render_fn_name(
+                __cx: &#topcoat_context::Cx,
+                body: #topcoat_router::Body,
+            ) -> ::std::pin::Pin<
+                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
+            > {
+                ::std::boxed::Box::pin(async move {
+                    #fm_insert
+                    #render_body
+                })
+            }
+
+            #[allow(non_camel_case_types)]
+            struct #unit_name;
+
+            const ERASED: #topcoat_router::PageFn = #topcoat_router::PageFn::const_new(
+                #topcoat_router::OwnedMethods::One(#topcoat_router::Method::GET),
+                ::std::borrow::Cow::Borrowed(#topcoat_router::Path::new(#route_path_lit)),
+                #render_fn_name,
+            );
+
+            impl ::core::convert::From<#unit_name> for #topcoat_router::PageFn {
+                fn from(_: #unit_name) -> Self {
+                    ERASED
+                }
+            }
+
+            #topcoat_inventory::submit!(ERASED);
+        };
+    })
+}
