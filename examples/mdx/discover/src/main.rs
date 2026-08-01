@@ -51,7 +51,7 @@ async fn root_layout(slot: Result) -> Result {
 
 // --- Pages -------------------------------------------------------------------
 
-#[page]
+#[page("/")]
 async fn home() -> Result {
     compile_mdx!(
         mdx_components! { Highlight => highlight },
