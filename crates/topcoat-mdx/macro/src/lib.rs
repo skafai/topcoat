@@ -13,9 +13,11 @@ use heck::ToKebabCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{Ident, LitStr, Path as SynPath, Token};
+use syn::{
+    Ident, LitStr, Path as SynPath, Token,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+};
 use topcoat_core_grammar::paths::{
     topcoat_context, topcoat_error, topcoat_inventory, topcoat_router, topcoat_view,
 };
@@ -48,11 +50,13 @@ impl Parse for CompPair {
 enum CompileMdxInput {
     TwoArgs {
         components: Vec<(String, SynPath)>,
+        wrapper: Option<SynPath>,
         lit_str: LitStr,
     },
     TwoArgsWithOverrides {
         components: Vec<(String, SynPath)>,
         overrides: Vec<(&'static str, SynPath)>,
+        wrapper: Option<SynPath>,
         lit_str: LitStr,
     },
     OneArg {
@@ -86,31 +90,34 @@ fn parse_component_braces(content: ParseStream) -> syn::Result<Vec<(String, SynP
 
 impl Parse for CompileMdxInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Pattern 1: { Ident => Path, ... } [, overrides = { "tag" => Path, ... }], "path.mdx"
-        // — direct braced block
+        // Pattern 1: { Ident => Path, ... } [, overrides = { "tag" => Path, ... }]
+        // [, wrapper = Path], "path.mdx" — direct braced block
         if input.peek(syn::token::Brace) {
             let content;
             syn::braced!(content in input);
             let components = parse_component_braces(&content)?;
             let overrides = parse_optional_overrides(input)?;
+            let wrapper = parse_optional_wrapper(input)?;
             input.parse::<Token![,]>()?;
             let lit_str: LitStr = input.parse()?;
             return if overrides.is_empty() {
                 Ok(Self::TwoArgs {
                     components,
+                    wrapper,
                     lit_str,
                 })
             } else {
                 Ok(Self::TwoArgsWithOverrides {
                     components,
                     overrides,
+                    wrapper,
                     lit_str,
                 })
             };
         }
 
-        // Pattern 2: mdx_components!{ Ident => Path, ... } [, overrides = { "tag" => Path, ... }], "path.mdx"
-        // — mdx_components! macro_rules! invocation.
+        // Pattern 2: mdx_components!{ Ident => Path, ... } [, overrides = { "tag" => Path, ... }]
+        // [, wrapper = Path], "path.mdx" — mdx_components! macro_rules! invocation.
         if input.peek(Ident) {
             let fork = input.fork();
             let maybe_ident: Ident = fork.parse()?;
@@ -124,17 +131,20 @@ impl Parse for CompileMdxInput {
                 syn::braced!(content in input);
                 let components = parse_component_braces(&content)?;
                 let overrides = parse_optional_overrides(input)?;
+                let wrapper = parse_optional_wrapper(input)?;
                 input.parse::<Token![,]>()?;
                 let lit_str: LitStr = input.parse()?;
                 return if overrides.is_empty() {
                     Ok(Self::TwoArgs {
                         components,
+                        wrapper,
                         lit_str,
                     })
                 } else {
                     Ok(Self::TwoArgsWithOverrides {
                         components,
                         overrides,
+                        wrapper,
                         lit_str,
                     })
                 };
@@ -147,11 +157,32 @@ impl Parse for CompileMdxInput {
     }
 }
 
+/// Parses an optional `wrapper = Path` from a `ParseStream`.
+/// Returns `None` if no wrapper keyword is found.
+fn parse_optional_wrapper(input: ParseStream) -> syn::Result<Option<SynPath>> {
+    let fork = input.fork();
+    if !fork.peek(Token![,]) {
+        return Ok(None);
+    }
+    let _: Token![,] = fork.parse()?;
+    if !fork.peek(Ident) {
+        return Ok(None);
+    }
+    let maybe_kw: Ident = fork.parse()?;
+    if maybe_kw != "wrapper" || !fork.peek(Token![=]) {
+        return Ok(None);
+    }
+    // Consume from the actual stream.
+    input.parse::<Token![,]>()?;
+    let _kw: Ident = input.parse()?;
+    input.parse::<Token![=]>()?;
+    let path: SynPath = input.parse()?;
+    Ok(Some(path))
+}
+
 /// Parses an optional `overrides = { "tag" => Path, ... }` from a `ParseStream`.
 /// Returns an empty vector if no overrides keyword is found.
-fn parse_optional_overrides(
-    input: ParseStream,
-) -> syn::Result<Vec<(&'static str, SynPath)>> {
+fn parse_optional_overrides(input: ParseStream) -> syn::Result<Vec<(&'static str, SynPath)>> {
     let fork = input.fork();
     if !fork.peek(Token![,]) {
         return Ok(Vec::new());
@@ -173,7 +204,12 @@ fn parse_optional_overrides(
     let pairs = Punctuated::<OverridePair, Token![,]>::parse_terminated(&content)?;
     Ok(pairs
         .into_iter()
-        .map(|p| (Box::leak(p.tag.value().into_boxed_str()) as &'static str, p.path))
+        .map(|p| {
+            (
+                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                p.path,
+            )
+        })
         .collect())
 }
 
@@ -181,12 +217,15 @@ fn parse_optional_overrides(
 // mdx_page! input parsing
 // ---------------------------------------------------------------------------
 
-/// Input for `mdx_page!`: (`route_path`, `file_path`, [frontmatter = Type], [overrides = {...}])
+/// Input for `mdx_page!`: (`route_path`, `file_path`, [frontmatter = Type], [overrides = {...}],
+/// [components = {...}], [wrapper = Path])
 struct MdxPageInput {
     route_path: LitStr,
     file_path: LitStr,
     frontmatter_type: Option<syn::Type>,
     overrides: Option<Vec<(&'static str, SynPath)>>,
+    components: Option<Vec<(String, SynPath)>>,
+    wrapper: Option<SynPath>,
 }
 
 impl Parse for MdxPageInput {
@@ -197,6 +236,8 @@ impl Parse for MdxPageInput {
 
         let mut frontmatter_type = None;
         let mut overrides = None;
+        let mut components = None;
+        let mut wrapper = None;
 
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
@@ -212,13 +253,26 @@ impl Parse for MdxPageInput {
                 overrides = Some(
                     pairs
                         .into_iter()
-                        .map(|p| (Box::leak(p.tag.value().into_boxed_str()) as &'static str, p.path))
+                        .map(|p| {
+                            (
+                                Box::leak(p.tag.value().into_boxed_str()) as &'static str,
+                                p.path,
+                            )
+                        })
                         .collect(),
                 );
+            } else if kw == "components" {
+                input.parse::<Token![=]>()?;
+                let content;
+                syn::braced!(content in input);
+                components = Some(parse_component_braces(&content)?);
+            } else if kw == "wrapper" {
+                input.parse::<Token![=]>()?;
+                wrapper = Some(input.parse()?);
             } else {
                 return Err(syn::Error::new(
                     kw.span(),
-                    "expected `frontmatter = Type` or `overrides = { ... }`, found something else",
+                    "expected `frontmatter = Type`, `overrides = { ... }`, `components = { ... }`, or `wrapper = Path`, found something else",
                 ));
             }
         }
@@ -228,6 +282,8 @@ impl Parse for MdxPageInput {
             file_path,
             frontmatter_type,
             overrides,
+            components,
+            wrapper,
         })
     }
 }
@@ -275,11 +331,19 @@ impl Parse for MdxPagesInput {
 /// Result of compiling an MDX file: frontmatter content (if any) and view tokens.
 ///
 /// The frontmatter can be YAML or TOML format; the format is tracked so
-/// [`mdx_page!`] can dispatch to the correct deserializer.
+/// [`mdx_page!`] can dispatch to the correct deserializer. When `has_wrapper`
+/// is true, the caller must wrap `view_tokens` in a component invocation.
 struct CompiledMdxResult {
     /// Raw frontmatter content and its format (YAML or TOML).
     frontmatter_content: Option<(String, FrontmatterFormat)>,
+    /// View tokens from the walker. When a wrapper was requested, these are
+    /// produced by `ViewWriter::new_nested()` (plain View expression, no
+    /// async wrapper).
     view_tokens: proc_macro2::TokenStream,
+    /// Whether a wrapper component was requested.
+    has_wrapper: bool,
+    /// The wrapper component path (set when `has_wrapper` is true).
+    wrapper_path: Option<SynPath>,
 }
 
 /// Shared inner logic: parse markdown content, extract frontmatter, walk mdast.
@@ -287,10 +351,13 @@ struct CompiledMdxResult {
 /// Used by both [`compile_mdx_file`] (`compile_mdx!`, `mdx_page!`) and
 /// [`generate_page_registration`] (`mdx_pages!`). The `label` parameter controls
 /// the prefix in error messages. The `overrides` parameter registers HTML
-/// element → component substitutions (e.g., `"a" => custom_link`).
+/// element → component substitutions (e.g., `"a" => custom_link`). When
+/// `wrapper` is `Some`, uses `ViewWriter::new_nested()` so the output tokens
+/// are suitable for a component `child:` prop.
 fn parse_and_walk_mdx(
     components: &[(String, SynPath)],
     overrides: &[(&'static str, SynPath)],
+    wrapper: Option<&SynPath>,
     content: &str,
     label: &str,
     span: Span,
@@ -305,12 +372,20 @@ fn parse_and_walk_mdx(
 
     // Build override registry from the borrowed slice into owned storage
     // that lives for the WalkContext lifetime.
-    let owned_overrides: Vec<(&'static str, SynPath)> =
-        overrides.iter().map(|(tag, path)| (*tag, path.clone())).collect();
+    let owned_overrides: Vec<(&'static str, SynPath)> = overrides
+        .iter()
+        .map(|(tag, path)| (*tag, path.clone()))
+        .collect();
     let ctx = topcoat_mdx_grammar::walker::WalkContext::new(components, &owned_overrides, span);
 
     // Walk mdast into ViewWriter, skipping the frontmatter node.
-    let mut writer = ViewWriter::new();
+    // Use new_nested() when a wrapper is specified so the tokens are suitable
+    // for a component `child:` prop (no async wrapper).
+    let mut writer = if wrapper.is_some() {
+        ViewWriter::new_nested()
+    } else {
+        ViewWriter::new()
+    };
     if let markdown::mdast::Node::Root(r) = root {
         let start_idx = usize::from(frontmatter_content.is_some());
         for child in r.children.iter().skip(start_idx) {
@@ -328,16 +403,22 @@ fn parse_and_walk_mdx(
         return Err(combined_err);
     }
 
+    let inner_tokens = writer.into_token_stream();
+
     Ok(CompiledMdxResult {
         frontmatter_content,
-        view_tokens: writer.into_token_stream(),
+        view_tokens: inner_tokens,
+        has_wrapper: wrapper.is_some(),
+        wrapper_path: wrapper.cloned(),
     })
 }
 
 /// Shared logic: resolve path, read file, parse, extract frontmatter, walk.
+/// When `wrapper` is `Some`, emits a component invocation wrapping the view tokens.
 fn compile_mdx_file(
     components: &[(String, SynPath)],
     overrides: &[(&'static str, SynPath)],
+    wrapper: Option<&SynPath>,
     path_str: &str,
     span: Span,
 ) -> Result<CompiledMdxResult, syn::Error> {
@@ -373,7 +454,14 @@ fn compile_mdx_file(
         syn::Error::new(span, format!("compile_mdx! cannot read '{path_str}': {e}"))
     })?;
 
-    parse_and_walk_mdx(components, overrides, &content, "compile_mdx!", span)
+    parse_and_walk_mdx(
+        components,
+        overrides,
+        wrapper,
+        &content,
+        "compile_mdx!",
+        span,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +472,8 @@ fn compile_mdx_file(
 ///
 /// # Arguments
 ///
-/// * `path` - A string literal pointing to the `.mdx` or `.md` file, relative to `CARGO_MANIFEST_DIR`.
+/// * `path` - A string literal pointing to the `.mdx` or `.md` file, relative to
+///   `CARGO_MANIFEST_DIR`.
 /// * `components` (optional) - A component registry declared via `mdx_components!{...}`.
 ///
 /// # Examples
@@ -426,27 +515,59 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         }
     };
 
-    let (components, lit_str, overrides) = match input {
+    let (components, wrapper, overrides, lit_str) = match input {
         CompileMdxInput::TwoArgs {
             components,
+            wrapper,
             lit_str,
-        } => (components, lit_str, Vec::<(&'static str, SynPath)>::new()),
+        } => (
+            components,
+            wrapper,
+            Vec::<(&'static str, SynPath)>::new(),
+            lit_str,
+        ),
         CompileMdxInput::TwoArgsWithOverrides {
             components,
             overrides,
+            wrapper,
             lit_str,
-        } => (components, lit_str, overrides),
-        CompileMdxInput::OneArg { lit_str } => (Vec::new(), lit_str, Vec::new()),
+        } => (components, wrapper, overrides, lit_str),
+        CompileMdxInput::OneArg { lit_str } => (Vec::new(), None, Vec::new(), lit_str),
     };
 
     let path_str = lit_str.value();
 
-    let result = match compile_mdx_file(&components, &overrides, &path_str, lit_str.span()) {
+    let result = match compile_mdx_file(
+        &components,
+        &overrides,
+        wrapper.as_ref(),
+        &path_str,
+        lit_str.span(),
+    ) {
         Ok(r) => r,
         Err(e) => return e.to_compile_error().into(),
     };
 
     let view_tokens = &result.view_tokens;
+
+    // Build the final output tokens. When no wrapper is requested, emit exactly
+    // what view_tokens contains (the original async { Ok(...) }.await pattern).
+    // When a wrapper is requested, wrap the inner view tokens in a Component
+    // render call using __cx from the enclosing scope.
+    let final_tokens = if result.has_wrapper {
+        let wrapper_path = result.wrapper_path.as_ref().unwrap();
+        quote! {
+            async {
+                {
+                    use #topcoat_view::Component;
+                    let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                    Component::render(#wrapper_path::default(), __cx, props).await
+                }
+            }.await
+        }
+    } else {
+        quote! { #view_tokens }
+    };
 
     // If frontmatter exists, emit it as a const alongside the view tokens.
     // Wrap in a block so the const is scoped and the block evaluates to the view.
@@ -465,12 +586,12 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         quote! {
             {
                 const #const_name: &str = #yaml_lit;
-                #view_tokens
+                #final_tokens
             }
         }
         .into()
     } else {
-        quote! { #view_tokens }.into()
+        quote! { #final_tokens }.into()
     }
 }
 
@@ -484,7 +605,8 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
 ///
 /// * `route_path` - The URL path for this page (e.g. `"/blog/hello"`).
 /// * `file_path` - Path to the `.mdx` or `.md` file, relative to `CARGO_MANIFEST_DIR`.
-/// * `frontmatter = Type` (optional) - The Rust type to deserialize the YAML or TOML frontmatter into.
+/// * `frontmatter = Type` (optional) - The Rust type to deserialize the YAML or TOML frontmatter
+///   into.
 ///
 /// # Examples
 ///
@@ -522,14 +644,34 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     let file_path = &input.file_path;
     let path_str = file_path.value();
 
-    let overrides: Vec<(&'static str, SynPath)> =
-        input.overrides.unwrap_or_default();
-    let result = match compile_mdx_file(&[], &overrides, &path_str, file_path.span()) {
+    let components: Vec<(String, SynPath)> = input.components.unwrap_or_default();
+    let overrides: Vec<(&'static str, SynPath)> = input.overrides.unwrap_or_default();
+    let result = match compile_mdx_file(
+        &components,
+        &overrides,
+        input.wrapper.as_ref(),
+        &path_str,
+        file_path.span(),
+    ) {
         Ok(r) => r,
         Err(e) => return e.to_compile_error().into(),
     };
 
     let view_tokens = &result.view_tokens;
+
+    // Apply wrapper if requested — emits Component::render() call using `cx`.
+    let render_body = if result.has_wrapper {
+        let wrapper_path = result.wrapper_path.as_ref().unwrap();
+        quote! {
+            {
+                use #topcoat_view::Component;
+                let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                Component::render(#wrapper_path::default(), cx, props).await
+            }
+        }
+    } else {
+        quote! { Ok(#view_tokens?) }
+    };
 
     // Generate unique identifiers from file stem.
     let file_stem = Path::new(&path_str)
@@ -597,11 +739,11 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
                 cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
             ) -> ::std::pin::Pin<
-                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send>
+                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
                 ::std::boxed::Box::pin(async move {
                     #fm_insert
-                    Ok(#view_tokens?)
+                    #render_body
                 })
             }
 
@@ -703,7 +845,7 @@ fn generate_page_registration(
     })?;
 
     let CompiledMdxResult { view_tokens, .. } =
-        parse_and_walk_mdx(&[], &[], &content, "mdx_pages!", span)?;
+        parse_and_walk_mdx(&[], &[], None, &content, "mdx_pages!", span)?;
 
     // Generate unique identifiers from file stem.
     // Use snake_case for identifiers (valid Rust) but the route path
@@ -725,7 +867,7 @@ fn generate_page_registration(
                 cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
             ) -> ::std::pin::Pin<
-                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send>
+                Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
                 ::std::boxed::Box::pin(async move {
                     Ok(#view_tokens?)
@@ -756,8 +898,8 @@ fn generate_page_registration(
 ///
 /// # Arguments
 ///
-/// * `directory_path` - A string literal pointing to a directory, relative to
-///   `CARGO_MANIFEST_DIR`. All `.mdx` and `.md` files within this directory are scanned.
+/// * `directory_path` - A string literal pointing to a directory, relative to `CARGO_MANIFEST_DIR`.
+///   All `.mdx` and `.md` files within this directory are scanned.
 /// * `prefix = "/path"` (optional) - A route path prefix prepended to each derived route.
 ///
 /// # Examples
