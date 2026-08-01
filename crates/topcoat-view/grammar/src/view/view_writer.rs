@@ -223,7 +223,7 @@ impl ViewWriter {
     }
 }
 
-/// Identifies which `internal` helper a [`Chunk::Expr`] should be wrapped in
+/// Identifies which `internal` helper a `Chunk::Expr` should be wrapped in
 /// when emitted, so the generated code uses the matching `__*` function and
 /// the corresponding `*ViewParts` trait.
 #[derive(Copy, Clone)]
