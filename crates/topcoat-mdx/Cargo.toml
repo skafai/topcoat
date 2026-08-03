@@ -35,15 +35,15 @@ frontmatter = [
 topcoat-mdx-macro.workspace = true
 # Versions match topcoat-mdx-macro's: the macro parses frontmatter at compile
 # time and this crate parses the same text at runtime.
-serde = { version = "1", optional = true }
-serde-saphyr = { version = "1.0", optional = true }
-toml = { version = "0.8", optional = true }
+serde = { workspace = true, optional = true }
+serde-saphyr = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 topcoat = { workspace = true, features = ["mdx"] }
-serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1.0"
-toml = "0.8"
+serde = { workspace = true, features = ["derive"] }
+serde-saphyr.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

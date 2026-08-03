@@ -14,9 +14,10 @@ rust-version.workspace = true
 proc-macro = false
 
 [dependencies]
-# markdown version must stay synchronized with topcoat-mdx-macro;
-# both crates use markdown-rs types directly (to_mdast, mdast::Node).
-markdown = "1.0"
+# markdown-rs types (to_mdast, mdast::Node) cross the boundary to
+# topcoat-mdx-macro, so both crates must resolve the same version. The
+# workspace entry is what keeps them together.
+markdown.workspace = true
 topcoat-view-grammar.workspace = true
 
 heck = { workspace = true }

@@ -17,7 +17,7 @@ topcoat = { workspace = true, features = [
 	"router",
 	"discover",
 ] }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 
 [lints]
 workspace = true
