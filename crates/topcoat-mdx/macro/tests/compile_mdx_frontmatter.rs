@@ -75,3 +75,52 @@ async fn compile_mdx_handles_md_extension_with_frontmatter() {
         "frontmatter should not render as content"
     );
 }
+
+// ---- Custom fields: rendering should work regardless of unknown fields ----
+
+#[tokio::test]
+async fn compile_mdx_blog_post_with_custom_fields() {
+    // Blog post has non-standard fields: subtitle, publishDate,
+    // lastModifiedDate, keywords. Body should still render.
+    let view = compile_mdx!("tests/fixtures/frontmatter_blog_post.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(
+        !html.contains("---"),
+        "frontmatter should not render as content"
+    );
+    assert!(
+        html.contains("Blog Post with Custom Metadata"),
+        "heading should render"
+    );
+    assert!(html.contains("First list item"), "list item should render");
+}
+
+#[tokio::test]
+async fn compile_mdx_arbitrary_custom_fields() {
+    // Custom fields (category, author, custom_key) don't break rendering.
+    let view = compile_mdx!("tests/fixtures/frontmatter_minimal_custom.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(
+        !html.contains("---"),
+        "frontmatter should not render as content"
+    );
+    assert!(html.contains("Custom Fields Test"), "heading should render");
+}
+
+#[tokio::test]
+async fn compile_mdx_toml_custom_fields() {
+    // TOML frontmatter with custom fields (subtitle, my_field, nested).
+    let view = compile_mdx!("tests/fixtures/frontmatter_toml_custom.mdx")
+        .expect("view should render successfully");
+    let cx = CxTestBuilder::new().build();
+    let html = view.render(&cx);
+    assert!(
+        !html.contains("+++"),
+        "TOML frontmatter should not render as content"
+    );
+    assert!(html.contains("TOML Custom Fields"), "heading should render");
+}
