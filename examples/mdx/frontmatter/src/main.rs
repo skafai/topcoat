@@ -258,6 +258,25 @@ mod tests {
         assert_eq!(dates, sorted);
     }
 
+    // A post that keeps its own directory is reached at the directory, not at
+    // a route ending in a repeated segment.
+    #[test]
+    fn index_file_serves_its_directory() {
+        let entry = mdx_index_posts()
+            .iter()
+            .find(|post| post.slug == "release-notes")
+            .expect("the index file is indexed under its directory, not as `index`");
+        assert_eq!(entry.path, "/blog/release-notes");
+    }
+
+    #[test]
+    fn no_route_ends_in_index() {
+        for post in mdx_index_posts() {
+            assert!(!post.path.ends_with("/index"), "{}", post.path);
+            assert_ne!(post.slug, "index");
+        }
+    }
+
     // Parsing happens once, not on every read.
     #[test]
     fn metadata_parses_once() {

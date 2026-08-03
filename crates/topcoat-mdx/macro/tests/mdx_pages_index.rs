@@ -434,6 +434,70 @@ mod mismatched_meta_test {
     }
 }
 
+// ---- index.mdx standing for its directory ----
+
+// A post that keeps its assets in a directory of its own should not have a
+// route ending in a repeated segment.
+mod index_file_test {
+    use topcoat_mdx_macro::mdx_pages;
+
+    mdx_pages!("tests/fixtures/index-pages", prefix = "/index-file-test");
+
+    fn path_of(slug: &str) -> &'static str {
+        mdx_index_tests_fixtures_index_pages()
+            .iter()
+            .find(|entry| entry.slug == slug)
+            .unwrap_or_else(|| panic!("{slug} entry should exist"))
+            .path
+    }
+
+    #[test]
+    fn index_mdx_takes_its_directory_route() {
+        assert_eq!(path_of("my-post"), "/index-file-test/my-post");
+    }
+
+    // The same holds for `.md`, at any depth.
+    #[test]
+    fn nested_index_md_takes_its_directory_route() {
+        assert_eq!(path_of("old-post"), "/index-file-test/archive/old-post");
+    }
+
+    // An index file is named after the directory it stands for. Slugs would
+    // otherwise all be "index" and collide with each other.
+    #[test]
+    fn index_file_slug_is_its_directory() {
+        let slugs: Vec<&str> = mdx_index_tests_fixtures_index_pages()
+            .iter()
+            .map(|entry| entry.slug)
+            .collect();
+        assert!(!slugs.contains(&"index"), "found {slugs:?}");
+        assert!(slugs.contains(&"my-post"), "found {slugs:?}");
+        assert!(slugs.contains(&"old-post"), "found {slugs:?}");
+    }
+
+    #[test]
+    fn sibling_of_an_index_file_is_unaffected() {
+        assert_eq!(path_of("appendix"), "/index-file-test/my-post/appendix");
+    }
+
+    #[test]
+    fn a_flat_file_is_unaffected() {
+        assert_eq!(path_of("flat"), "/index-file-test/flat");
+    }
+
+    // No route ends in the literal segment, which is the point of the rule.
+    #[test]
+    fn no_route_ends_in_index() {
+        for entry in mdx_index_tests_fixtures_index_pages() {
+            assert!(
+                !entry.path.ends_with("/index"),
+                "{} should have collapsed",
+                entry.path
+            );
+        }
+    }
+}
+
 // ---- Index entry type test ----
 
 mod type_test {

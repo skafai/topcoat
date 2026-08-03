@@ -23,6 +23,11 @@ use crate::compile::parse_and_walk_mdx;
 /// Given the scan directory, the resolved file path, and an optional prefix,
 /// computes the route path: applies the prefix, then appends the relative
 /// directory structure and kebab-cased filename stem.
+///
+/// A file named `index` is the exception. It stands for the directory holding
+/// it, so `posts/my-post/index.mdx` is `/my-post` rather than
+/// `/my-post/index`. This lets a post keep its images and partials in one
+/// directory without the route repeating itself.
 pub(crate) fn derive_route_path(scan_dir: &Path, file_path: &Path, prefix: Option<&str>) -> String {
     let relative = file_path
         .strip_prefix(scan_dir)
@@ -50,20 +55,60 @@ pub(crate) fn derive_route_path(scan_dir: &Path, file_path: &Path, prefix: Optio
         (None, parts[0])
     };
     let kebab_stem = stem.to_kebab_case();
+    let is_index = kebab_stem == "index";
 
     let mut path_parts: Vec<String> = Vec::new();
     if let Some(dir) = dir_part {
         let kebab_dir: Vec<String> = dir.split('/').map(str::to_kebab_case).collect();
         path_parts.push(kebab_dir.join("/"));
     }
-    path_parts.push(kebab_stem);
+    if !is_index {
+        path_parts.push(kebab_stem);
+    }
 
     let relative_route = path_parts.join("/");
 
     match prefix {
+        // An index file at the scan root leaves nothing to append, so the
+        // prefix is the whole route.
+        Some(p) if relative_route.is_empty() => p.trim_end_matches('/').to_owned(),
         Some(p) => format!("{}/{}", p.trim_end_matches('/'), relative_route),
         None => format!("/{relative_route}"),
     }
+}
+
+/// Rejects two scanned files that derive the same route.
+///
+/// Route derivation is not injective: `one.mdx` and `one/index.mdx` both give
+/// `/one`, and kebab-casing maps `my_post.mdx` and `my-post.mdx` onto
+/// `/my-post`. Without this check the file that wins is whichever the
+/// directory walk reached last, which is neither stable nor visible.
+///
+/// # Errors
+///
+/// Returns an error naming the route and both files that claim it.
+pub(crate) fn check_route_collisions(
+    scanned: &[(String, std::path::PathBuf)],
+    span: Span,
+) -> Result<(), syn::Error> {
+    let mut claimed: std::collections::HashMap<&str, &std::path::Path> =
+        std::collections::HashMap::with_capacity(scanned.len());
+
+    for (route, file_path) in scanned {
+        if let Some(previous) = claimed.insert(route, file_path) {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "mdx_pages! derives the route '{route}' from two files: '{}' and '{}'; \
+                     rename one of them",
+                    previous.display(),
+                    file_path.display()
+                ),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// A scanned page entry: file path, parsed content, and frontmatter data.
@@ -220,12 +265,23 @@ pub(crate) fn build_index(
             meta_readers[position] = Some(reader_name);
         }
 
-        // Derive slug from file stem using kebab-case.
-        let slug = resolved
+        // Derive slug from file stem using kebab-case. An index file is named
+        // after the directory it stands for, matching its route: every index
+        // file would otherwise answer to the slug "index".
+        let stem = resolved
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("page")
-            .to_kebab_case();
+            .unwrap_or("page");
+        let slug = if stem.eq_ignore_ascii_case("index") {
+            resolved
+                .parent()
+                .and_then(std::path::Path::file_name)
+                .and_then(|name| name.to_str())
+                .unwrap_or(stem)
+                .to_kebab_case()
+        } else {
+            stem.to_kebab_case()
+        };
         // Intentional leak: slugs/paths are small and the index array requires
         // &'static str. Leaking avoids complex lifetime management.
         let slug_str: &'static str = Box::leak(slug.into_boxed_str());
@@ -447,4 +503,117 @@ pub(crate) fn generate_page_registration(
             #submit
         };
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::{check_route_collisions, derive_route_path};
+
+    fn route(relative: &str, prefix: Option<&str>) -> String {
+        derive_route_path(
+            Path::new("/content"),
+            &Path::new("/content").join(relative),
+            prefix,
+        )
+    }
+
+    #[test]
+    fn flat_file_keeps_its_stem() {
+        assert_eq!(route("hello-world.mdx", None), "/hello-world");
+        assert_eq!(route("hello-world.mdx", Some("/blog")), "/blog/hello-world");
+    }
+
+    #[test]
+    fn stem_is_kebab_cased() {
+        assert_eq!(route("MyPost.mdx", Some("/blog")), "/blog/my-post");
+    }
+
+    #[test]
+    fn nested_file_keeps_its_directory() {
+        assert_eq!(
+            route("archive/older.mdx", Some("/blog")),
+            "/blog/archive/older"
+        );
+    }
+
+    // A file named `index` stands for its directory, so the directory itself
+    // is the route rather than gaining a redundant final segment.
+    #[test]
+    fn index_file_takes_its_directory_route() {
+        assert_eq!(route("my-post/index.mdx", Some("/blog")), "/blog/my-post");
+        assert_eq!(route("my-post/index.md", Some("/blog")), "/blog/my-post");
+    }
+
+    #[test]
+    fn index_file_collapses_through_several_directories() {
+        assert_eq!(
+            route("archive/old-post/index.mdx", Some("/blog")),
+            "/blog/archive/old-post"
+        );
+    }
+
+    // A sibling of an index file is unaffected.
+    #[test]
+    fn sibling_of_index_keeps_its_own_segment() {
+        assert_eq!(
+            route("my-post/appendix.mdx", Some("/blog")),
+            "/blog/my-post/appendix"
+        );
+    }
+
+    #[test]
+    fn index_at_the_scan_root_is_the_prefix() {
+        assert_eq!(route("index.mdx", Some("/blog")), "/blog");
+        assert_eq!(route("index.mdx", None), "/");
+    }
+
+    #[test]
+    fn distinct_routes_do_not_collide() {
+        let scanned = [
+            ("/blog/one".to_owned(), PathBuf::from("/content/one.mdx")),
+            ("/blog/two".to_owned(), PathBuf::from("/content/two.mdx")),
+        ];
+        assert!(check_route_collisions(&scanned, proc_macro2::Span::call_site()).is_ok());
+    }
+
+    // `one.mdx` and `one/index.mdx` both claim `/blog/one`. Left unchecked the
+    // winner would depend on the order the directory happened to be walked.
+    #[test]
+    fn index_file_colliding_with_a_flat_sibling_is_an_error() {
+        let scanned = [
+            ("/blog/one".to_owned(), PathBuf::from("/content/one.mdx")),
+            (
+                "/blog/one".to_owned(),
+                PathBuf::from("/content/one/index.mdx"),
+            ),
+        ];
+        let error = check_route_collisions(&scanned, proc_macro2::Span::call_site())
+            .expect_err("the two files claim one route");
+        let message = error.to_string();
+        assert!(message.contains("/blog/one"), "names the route: {message}");
+        assert!(message.contains("one.mdx"), "names both files: {message}");
+        assert!(
+            message.contains("one/index.mdx"),
+            "names both files: {message}"
+        );
+    }
+
+    // Kebab-casing can map two distinct filenames onto one route, which was
+    // silent before this check.
+    #[test]
+    fn kebab_cased_names_colliding_is_an_error() {
+        let scanned = [
+            (
+                "/blog/my-post".to_owned(),
+                PathBuf::from("/content/my-post.mdx"),
+            ),
+            (
+                "/blog/my-post".to_owned(),
+                PathBuf::from("/content/my_post.mdx"),
+            ),
+        ];
+        assert!(check_route_collisions(&scanned, proc_macro2::Span::call_site()).is_err());
+    }
 }

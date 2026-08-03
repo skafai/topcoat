@@ -59,6 +59,17 @@ Route paths are derived from file structure relative to the scan directory. File
 |---|---|---|
 | `hello-world.mdx` | `/hello-world` | `/blog/hello-world` |
 | `nested/post.mdx` | `/nested/post` | `/blog/nested/post` |
+| `my-post/index.mdx` | `/my-post` | `/blog/my-post` |
+
+## Index files
+
+A file named `index.mdx` or `index.md` stands for the directory holding it, so `posts/my-post/index.mdx` serves `/blog/my-post` rather than `/blog/my-post/my-post`. This lets a post keep its images, partials, or translations in a directory of its own without the route repeating itself.
+
+Its slug follows the same rule: the entry above is indexed as `my-post`. Every index file would otherwise answer to `index` and collide with the others.
+
+Nothing else changes. A flat `hello-world.mdx` and a sibling `my-post/appendix.mdx` keep the routes they always had, so both layouts can live in one directory.
+
+Two files that derive the same route are a compile error naming both. This happens when an index file sits beside a same-named sibling, and also when kebab-casing maps two names onto one route, as `my_post.mdx` and `my-post.mdx` do.
 
 ## Shared components
 

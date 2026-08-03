@@ -25,7 +25,10 @@ use topcoat_mdx_grammar::walker::FrontmatterFormat;
 use crate::{
     compile::compile_mdx_file,
     input::{CompileMdxInput, MdxPageInput, MdxPagesInput},
-    pages::{build_index, derive_route_path, generate_page_registration, scan_directory},
+    pages::{
+        build_index, check_route_collisions, derive_route_path, generate_page_registration,
+        scan_directory,
+    },
 };
 
 /// Rejects `frontmatter = Type` when the runtime support it expands into is
@@ -388,16 +391,31 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // Two files can derive one route, through an index file next to a
+    // same-named sibling or through kebab-casing. Reject that before
+    // registering anything, so the outcome does not depend on walk order.
+    let scanned: Vec<(String, std::path::PathBuf)> = page_entries
+        .iter()
+        .map(|entry| {
+            (
+                derive_route_path(&canonical_scan_dir, &entry.file_path, prefix.as_deref()),
+                entry.file_path.clone(),
+            )
+        })
+        .collect();
+    if let Err(e) = check_route_collisions(&scanned, span) {
+        return e.to_compile_error().into();
+    }
+
     // Generate route registrations.
     let route_results: Vec<proc_macro2::TokenStream> = page_entries
         .iter()
+        .zip(&scanned)
         .zip(&meta_args)
-        .map(|(entry, meta_arg)| {
-            let route_path =
-                derive_route_path(&canonical_scan_dir, &entry.file_path, prefix.as_deref());
+        .map(|((entry, (route_path, _)), meta_arg)| {
             match generate_page_registration(
                 &entry.file_path,
-                &route_path,
+                route_path,
                 &components,
                 &overrides,
                 input.wrapper.as_ref(),

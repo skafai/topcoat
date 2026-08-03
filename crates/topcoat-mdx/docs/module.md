@@ -64,7 +64,7 @@ Passing `frontmatter = Type` to [`mdx_pages!`] hands that work to the macro inst
 
 # Route Registration
 
-The [`mdx_page!`] macro compiles a single file and registers it as a route handler. The [`mdx_pages!`] macro walks a directory tree, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename.
+The [`mdx_page!`] macro compiles a single file and registers it as a route handler. The [`mdx_pages!`] macro walks a directory tree, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename. A file named `index` is named after the directory holding it instead, and serves that directory's route.
 
 Both macros accept optional `components`, `overrides`, and `wrapper` arguments. See the macro reference docs for details.
 
