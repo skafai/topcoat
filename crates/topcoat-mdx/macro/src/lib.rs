@@ -15,17 +15,37 @@ use std::path::Path;
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
-use syn::{Ident, Path as SynPath};
+use quote::{quote, quote_spanned};
+use syn::{Ident, LitStr, Path as SynPath, spanned::Spanned};
 use topcoat_core_grammar::paths::{
     topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
 };
+use topcoat_mdx_grammar::walker::FrontmatterFormat;
 
 use crate::{
     compile::compile_mdx_file,
     input::{CompileMdxInput, MdxPageInput, MdxPagesInput},
     pages::{build_index, derive_route_path, generate_page_registration, scan_directory},
 };
+
+/// Rejects `frontmatter = Type` when the runtime support it expands into is
+/// not compiled in.
+///
+/// Deserializing frontmatter into a caller's type happens at runtime, unlike
+/// the rest of MDX compilation, so it lives behind a feature the caller opts
+/// into. Without this check the generated code fails on a missing module,
+/// which says nothing about the feature.
+fn check_frontmatter_feature(frontmatter: Option<&SynPath>) -> Result<(), syn::Error> {
+    match frontmatter {
+        Some(path) if !cfg!(feature = "frontmatter") => Err(syn::Error::new(
+            path.span(),
+            "`frontmatter = Type` needs the `mdx-frontmatter` feature of `topcoat` \
+             (or the `frontmatter` feature of `topcoat-mdx`); reading `frontmatter_raw` \
+             from the index works without it",
+        )),
+        _ => Ok(()),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // compile_mdx! proc-macro
@@ -127,6 +147,10 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
         }
     };
 
+    if let Err(e) = check_frontmatter_feature(input.frontmatter.as_ref()) {
+        return e.to_compile_error().into();
+    }
+
     let route_path = &input.route_path;
     let file_path = &input.file_path;
     let path_str = file_path.value();
@@ -146,13 +170,45 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
 
     let view_tokens = &result.view_tokens;
 
+    // With `frontmatter = Type`, the page's frontmatter is deserialized once
+    // on first use and handed to the wrapper.
+    // The prop is passed whenever a frontmatter type was named, so a wrapper
+    // written for one page works for a page without frontmatter too.
+    let (meta_static, meta_value) = match (&input.frontmatter, &result.frontmatter) {
+        (Some(meta_type), Some((fm_content, format))) => {
+            let raw_lit = LitStr::new(fm_content, file_path.span());
+            let parse = match format {
+                FrontmatterFormat::Yaml => quote! { #topcoat_mdx::__private::parse_yaml },
+                FrontmatterFormat::Toml => quote! { #topcoat_mdx::__private::parse_toml },
+            };
+            let statik = quote! {
+                static __MDX_PAGE_META: ::std::sync::LazyLock<#meta_type> =
+                    ::std::sync::LazyLock::new(|| #parse(#raw_lit, #path_str));
+            };
+            (Some(statik), Some(quote! { Some(&*__MDX_PAGE_META) }))
+        }
+        (Some(_), None) => (None, Some(quote! { None })),
+        (None, _) => (None, None),
+    };
+    // Spanned at the wrapper argument, so a component without a `meta` prop
+    // reports the error where the author named it.
+    let meta_prop = match (&input.wrapper, &meta_value) {
+        (Some(wrapper_path), Some(value)) => {
+            Some(quote_spanned! { wrapper_path.span() => .meta(#value) })
+        }
+        _ => None,
+    };
+
     // Apply wrapper if requested, emitting a Component::render() call using `cx`.
     let render_body = if result.has_wrapper {
         let wrapper_path = result.wrapper_path.as_ref().unwrap();
         quote! {
             {
                 use #topcoat_view::Component;
-                let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                let props = #wrapper_path::props_builder()
+                    .child(#view_tokens)
+                    #meta_prop
+                    .build();
                 Component::render(#wrapper_path::default(), __cx, props).await
             }
         }
@@ -178,6 +234,8 @@ pub fn mdx_page(tokens: TokenStream) -> TokenStream {
     quote! {
         #[allow(clippy::needless_question_mark)]
         const _: () = {
+            #meta_static
+
             fn #render_fn_name(
                 __cx: &#topcoat_context::Cx,
                 body: #topcoat_router::Body,
@@ -228,6 +286,10 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
             .into();
         }
     };
+
+    if let Err(e) = check_frontmatter_feature(input.frontmatter.as_ref()) {
+        return e.to_compile_error().into();
+    }
 
     let dir_str = input.directory_path.value();
     let span = input.directory_path.span();
@@ -294,10 +356,43 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     // Scan directory for .mdx and .md files.
     let page_entries = scan_directory(&canonical_scan_dir, &canonical_manifest, span);
 
+    // Build index entries from scanned pages. This runs first because it also
+    // names the statics holding parsed frontmatter, which the wrapper of each
+    // registered route is handed.
+    let index = match build_index(
+        &canonical_scan_dir,
+        &page_entries,
+        prefix.as_deref(),
+        input.frontmatter.as_ref(),
+        span,
+    ) {
+        Ok(index) => index,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    let index_entries = index.items;
+    let meta_statics = index.meta_statics;
+
+    // A wrapper's prop shape follows the macro argument, not the individual
+    // page: with `frontmatter = Type` every page passes a `meta` prop, and a
+    // page without frontmatter passes `None`. One wrapper then serves a
+    // directory whose pages do not all carry frontmatter.
+    let meta_args: Vec<Option<proc_macro2::TokenStream>> = index
+        .meta_readers
+        .iter()
+        .map(|reader| {
+            input.frontmatter.as_ref().map(|_| {
+                reader
+                    .as_ref()
+                    .map_or_else(|| quote! { None }, |reader| quote! { Some(#reader()) })
+            })
+        })
+        .collect();
+
     // Generate route registrations.
     let route_results: Vec<proc_macro2::TokenStream> = page_entries
         .iter()
-        .map(|entry| {
+        .zip(&meta_args)
+        .map(|(entry, meta_arg)| {
             let route_path =
                 derive_route_path(&canonical_scan_dir, &entry.file_path, prefix.as_deref());
             match generate_page_registration(
@@ -306,6 +401,7 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
                 &components,
                 &overrides,
                 input.wrapper.as_ref(),
+                meta_arg.as_ref(),
                 span,
             ) {
                 Ok(ts) => ts,
@@ -314,12 +410,12 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
         })
         .collect();
 
-    // Build index entries from scanned pages.
-    let index_entries =
-        match build_index(&canonical_scan_dir, &page_entries, prefix.as_deref(), span) {
-            Ok(entries) => entries,
-            Err(e) => return e.to_compile_error().into(),
-        };
+    // Without `frontmatter = Type` the entries carry no parsed metadata, and
+    // the index is `MdxIndexEntry<()>` through the type parameter's default.
+    let entry_type = input.frontmatter.as_ref().map_or_else(
+        || quote! { #topcoat_mdx::MdxIndexEntry },
+        |meta_type| quote! { #topcoat_mdx::MdxIndexEntry<#meta_type> },
+    );
 
     // Derive a stable identifier from the directory path for the index name.
     let index_suffix = dir_str
@@ -344,11 +440,13 @@ pub fn mdx_pages(tokens: TokenStream) -> TokenStream {
     quote! {
         #route_tokens
 
-        #[allow(clippy::approx_constant)]
-        const #index_const_name: &'static [#topcoat_mdx::MdxIndexEntry] = #index_const_tokens;
+        #(#meta_statics)*
 
         #[allow(clippy::approx_constant)]
-        fn #index_fn_name() -> &'static [#topcoat_mdx::MdxIndexEntry] {
+        const #index_const_name: &'static [#entry_type] = #index_const_tokens;
+
+        #[allow(clippy::approx_constant)]
+        fn #index_fn_name() -> &'static [#entry_type] {
             #index_const_name
         }
     }

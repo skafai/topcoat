@@ -41,6 +41,7 @@ full = [
 	"mail",
 	"mail-smtp",
 	"mdx",
+	"mdx-frontmatter",
 	"multipart",
 	"router",
 	"runtime",
@@ -118,6 +119,14 @@ mdx = [
 	"dep:topcoat-mdx",
 	"dep:topcoat-mdx-macro",
 	"router",
+]
+# Reading frontmatter into a type of your own. Separate from `mdx` because
+# rendering resolves frontmatter while the macro expands, on the build machine,
+# while reading it into a type happens at runtime and needs serde and both
+# format parsers in the built program.
+mdx-frontmatter = [
+	"mdx",
+	"topcoat-mdx/frontmatter",
 ]
 multipart = [
 	"router",

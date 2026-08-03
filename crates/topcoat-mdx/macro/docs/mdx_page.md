@@ -78,7 +78,29 @@ mdx_page!(
 );
 ```
 
-The wrapper receives the compiled content as a `child` prop.
+The wrapper receives the compiled content as a `child` prop, and must not require any other prop apart from `meta` when `frontmatter = Type` is also given.
+
+## Typed frontmatter
+
+Pass `frontmatter = Type` to deserialize the page's frontmatter into a type of your own, once on first read, and hand it to the wrapper as a `meta` prop:
+
+```rust,ignore
+#[derive(serde::Deserialize)]
+struct PostMeta {
+    subtitle: Option<String>,
+}
+
+mdx_page!(
+    "/blog/hello",
+    "content/hello.mdx",
+    wrapper = components::blog_layout,
+    frontmatter = PostMeta
+);
+```
+
+The prop is `Option<&'static PostMeta>`, holding `None` when the page carries no frontmatter.
+
+This needs the `mdx-frontmatter` feature of `topcoat`, or the `frontmatter` feature of `topcoat-mdx` directly, since deserializing into your type happens at runtime rather than while the macro expands. A page whose frontmatter does not match the type panics on first read, naming the file: the macro sees only the type's name and cannot check the two against each other. See the [`mdx_pages!`] reference for the same argument applied to a whole directory.
 
 # Features
 
@@ -105,3 +127,4 @@ Fenced code block meta strings are parsed and attached as `data-*` attributes on
 Both extensions are parsed with the same MDX grammar; the extension is a naming convention, not a parser switch. Component tags work in `.md` files too, and MDX syntax rules (such as `{/* text */}` comments) apply to both.
 
 [`compile_mdx!`]: macro.compile_mdx.html
+[`mdx_pages!`]: macro.mdx_pages.html

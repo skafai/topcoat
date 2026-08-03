@@ -313,6 +313,127 @@ mod custom_meta_test {
     }
 }
 
+// ---- Typed frontmatter ----
+
+// With `frontmatter = Type` the macro deserializes each page's frontmatter
+// itself, once, and picks the deserializer from the syntax the page used.
+mod typed_meta_test {
+    use serde::Deserialize;
+    use topcoat_mdx_macro::mdx_pages;
+
+    // Every field is optional so that one type covers fixtures written in both
+    // syntaxes, which is the point being tested.
+    #[derive(Deserialize)]
+    pub struct TestMeta {
+        pub title: Option<String>,
+        pub subtitle: Option<String>,
+        #[serde(rename = "publishDate")]
+        pub publish_date: Option<String>,
+        pub my_field: Option<String>,
+        pub keywords: Option<Vec<String>>,
+    }
+
+    mdx_pages!(
+        "tests/fixtures/custom-metadata",
+        prefix = "/typed-meta-test",
+        frontmatter = TestMeta
+    );
+
+    // A second scan of the same directory without the argument, to check that
+    // the untyped form still compiles alongside.
+    mod untyped {
+        use topcoat_mdx_macro::mdx_pages;
+
+        mdx_pages!("tests/fixtures/tagged-pages", prefix = "/untyped-meta-test");
+
+        #[test]
+        fn mdx_index_untyped_has_no_meta() {
+            for entry in mdx_index_tests_fixtures_tagged_pages() {
+                assert!(entry.meta().is_none(), "no frontmatter type was given");
+            }
+        }
+    }
+
+    fn entry(slug: &str) -> &'static topcoat::mdx::MdxIndexEntry<TestMeta> {
+        mdx_index_tests_fixtures_custom_metadata()
+            .iter()
+            .find(|e| e.slug == slug)
+            .unwrap_or_else(|| panic!("{slug} entry should exist"))
+    }
+
+    #[test]
+    fn mdx_index_typed_meta_yaml_values() {
+        let meta = entry("example-post")
+            .meta()
+            .expect("YAML post has metadata");
+        assert_eq!(
+            meta.title.as_deref(),
+            Some("Blog Post with Custom Metadata")
+        );
+        assert_eq!(meta.subtitle.as_deref(), Some("A subtitle for the post"));
+        assert_eq!(meta.publish_date.as_deref(), Some("2025-01-01"));
+        assert_eq!(meta.keywords.as_ref().map(Vec::len), Some(5));
+    }
+
+    // The macro dispatched to the TOML deserializer without the consumer
+    // saying anything about the syntax.
+    #[test]
+    fn mdx_index_typed_meta_toml_values() {
+        let meta = entry("toml-post").meta().expect("TOML post has metadata");
+        assert_eq!(meta.title.as_deref(), Some("TOML Custom Fields"));
+        assert_eq!(meta.subtitle.as_deref(), Some("Using TOML frontmatter"));
+        assert_eq!(meta.my_field.as_deref(), Some("my_value"));
+    }
+
+    // A frontmatter type does not oblige every page in the directory to carry
+    // frontmatter.
+    #[test]
+    fn mdx_index_typed_meta_absent_without_frontmatter() {
+        assert!(entry("plain-post").meta().is_none());
+        assert!(entry("example-post").meta().is_some());
+    }
+
+    // Parsing happens once, not on every read.
+    #[test]
+    fn mdx_index_typed_meta_parsed_once() {
+        let first = entry("example-post").meta().expect("metadata is present");
+        let second = entry("example-post").meta().expect("metadata is present");
+        assert!(std::ptr::eq(first, second), "meta() should not reparse");
+    }
+}
+
+// ---- Frontmatter that does not match its type ----
+
+// The macro cannot check a page against the type it was given: it sees only
+// the type's path, and serde does not run while the macro expands. The
+// mismatch therefore surfaces on first read, naming the file it came from.
+mod mismatched_meta_test {
+    use serde::Deserialize;
+    use topcoat_mdx_macro::mdx_pages;
+
+    #[derive(Deserialize)]
+    pub struct RequiresAuthor {
+        #[allow(dead_code)]
+        pub author: String,
+    }
+
+    mdx_pages!(
+        "tests/fixtures/mismatched-meta",
+        prefix = "/mismatched-meta-test",
+        frontmatter = RequiresAuthor
+    );
+
+    #[test]
+    #[should_panic(expected = "bad-post.mdx")]
+    fn mdx_index_mismatched_meta_panics_naming_the_file() {
+        let entry = mdx_index_tests_fixtures_mismatched_meta()
+            .iter()
+            .find(|entry| entry.slug == "bad-post")
+            .expect("bad-post entry should exist");
+        let _ = entry.meta();
+    }
+}
+
 // ---- Index entry type test ----
 
 mod type_test {
@@ -322,8 +443,9 @@ mod type_test {
 
     #[test]
     fn mdx_index_entry_fields() {
-        // Verify MdxIndexEntry has the expected fields.
-        let entry = MdxIndexEntry {
+        // Verify MdxIndexEntry has the expected fields. The annotation picks
+        // up the default type parameter, since no frontmatter type is in play.
+        let entry: MdxIndexEntry = MdxIndexEntry {
             slug: "test",
             path: "/blog/test",
             title: Some("Test Title"),
@@ -333,6 +455,7 @@ mod type_test {
             frontmatter_raw: "title: Test Title\nsubtitle: Test Subtitle",
             frontmatter_format: MdxFrontmatterFormat::Yaml,
             word_count: 42,
+            meta_fn: None,
         };
         assert_eq!(entry.slug, "test");
         assert_eq!(entry.path, "/blog/test");
@@ -348,7 +471,7 @@ mod type_test {
     #[test]
     fn mdx_index_entry_empty_optional_fields() {
         static EMPTY_TAGS: &[&str] = &[];
-        let entry = MdxIndexEntry {
+        let entry: MdxIndexEntry = MdxIndexEntry {
             slug: "minimal",
             path: "/blog/minimal",
             title: None,
@@ -358,6 +481,7 @@ mod type_test {
             frontmatter_raw: "",
             frontmatter_format: MdxFrontmatterFormat::None,
             word_count: 0,
+            meta_fn: None,
         };
         assert!(entry.title.is_none());
         assert!(entry.date.is_none());

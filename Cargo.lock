@@ -1628,6 +1628,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdx-frontmatter"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "tokio",
+ "topcoat",
+]
+
+[[package]]
 name = "mdx-gfm"
 version = "0.5.0"
 dependencies = [

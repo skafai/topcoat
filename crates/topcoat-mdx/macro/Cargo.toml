@@ -15,6 +15,11 @@ proc-macro = true
 
 [features]
 discover = []
+# Mirrors topcoat-mdx's feature of the same name, which turns it on. The macro
+# only reads it to tell an author that `frontmatter = Type` needs the runtime
+# support enabled, rather than letting the generated code fail on a missing
+# module.
+frontmatter = []
 
 [dependencies]
 # markdown version must stay synchronized with topcoat-mdx-grammar;
@@ -35,7 +40,7 @@ ignore = { workspace = true }
 syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
-topcoat = { workspace = true, features = ["mdx", "view"] }
+topcoat = { workspace = true, features = ["mdx", "mdx-frontmatter", "view"] }
 topcoat-mdx-grammar.workspace = true
 topcoat-view-grammar.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

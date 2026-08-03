@@ -28,7 +28,7 @@ Without `.discover()`, the `#[page]`, `#[layout]`, and `#[route]` items in your 
 # Syntax
 
 ```text
-mdx_pages!(directory_path [, prefix = "/path"] [, components = {...}] [, overrides = {...}] [, wrapper = Path])
+mdx_pages!(directory_path [, prefix = "/path"] [, components = {...}] [, overrides = {...}] [, wrapper = Path] [, frontmatter = Type])
 ```
 
 The `directory_path` argument is a required string literal. All remaining arguments are optional and may appear in any order.
@@ -94,6 +94,56 @@ Pass `wrapper = Path` to wrap all pages in the same layout component:
 mdx_pages!("content/blog", wrapper = components::blog_layout);
 ```
 
+The wrapper receives the compiled page as its `child` prop, so it must declare one. It must not require any other prop, apart from `meta` when `frontmatter = Type` is also given.
+
+## Typed frontmatter
+
+Pass `frontmatter = Type` to have the macro deserialize each page's frontmatter itself. It picks the deserializer from the syntax each page used, parses once on first read, and hands the result to both the index and the wrapper:
+
+```rust,ignore
+use topcoat::{Result, mdx::mdx_pages, view::{View, component, view}};
+
+#[derive(serde::Deserialize)]
+struct PostMeta {
+    subtitle: Option<String>,
+    #[serde(rename = "publishDate")]
+    publish_date: String,
+}
+
+#[component]
+async fn blog_layout(#[default] child: View, meta: Option<&'static PostMeta>) -> Result {
+    view! {
+        <article>
+            if let Some(meta) = meta {
+                <p>(&meta.publish_date)</p>
+            }
+            (child)
+        </article>
+    }
+}
+
+mdx_pages!(
+    "content/blog",
+    frontmatter = PostMeta,
+    wrapper = blog_layout,
+);
+```
+
+Entries then answer `meta()`, and sorting or filtering on custom fields needs no deserializing of your own:
+
+```rust,ignore
+let mut posts: Vec<_> = mdx_index_content_blog().iter().collect();
+posts.sort_by_key(|post| post.meta().map(|meta| &meta.publish_date));
+```
+
+`meta` is an `Option` on both the index entry and the wrapper prop. A directory may hold pages that carry no frontmatter, and those pass `None` rather than being rejected.
+
+This needs the `mdx-frontmatter` feature of `topcoat`, or the `frontmatter` feature of `topcoat-mdx` directly. Rendering MDX resolves frontmatter while the macro expands, on the build machine; reading it into a type of your own happens at runtime, and that is what the feature adds.
+
+### What is not checked
+
+The macro sees the name of the type, never its fields, and serde does not run while the macro expands. A page whose frontmatter does not match the type is therefore not a compile error: it panics on first read, naming the file. Frontmatter that is not valid YAML or TOML at all is still a compile error, as before.
+
 # Content Indexer
 
 The macro emits two artifacts for content indexing: a const array and an accessor function.
@@ -113,6 +163,8 @@ Each `MdxIndexEntry` contains the following fields populated from frontmatter an
 - `frontmatter_raw`: the whole frontmatter block, delimiters stripped, empty when the page has none
 - `frontmatter_format`: whether that block is YAML, TOML, or absent
 - `word_count`: words in the page body, counted at compile time without the frontmatter
+
+Entries also answer `meta()`, which holds the frontmatter deserialized into the type passed as `frontmatter = Type`, and `None` when that argument was not given.
 
 ## Custom frontmatter fields
 
