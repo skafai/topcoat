@@ -8,9 +8,9 @@ publish = false
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 topcoat = { workspace = true, features = ["mdx", "serve", "view", "router", "discover"] }
 # Frontmatter fields beyond the named ones are deserialized by the consumer.
-serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1.0"
-toml = "0.8"
+serde = { workspace = true, features = ["derive"] }
+serde-saphyr.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true
