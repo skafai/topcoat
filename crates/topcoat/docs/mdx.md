@@ -83,7 +83,7 @@ async fn blog_index() -> Result {
 
 # Routes
 
-The [`mdx_page!`][mdx_page] macro compiles a single file and registers it as a route. The [`mdx_pages!`][mdx_pages] macro walks a directory, compiles every `.mdx` and `.md` file, and registers a handler per file. Route paths are the prefix, the subdirectory structure below the scanned directory, and the kebab-cased filename stem, so nested directories keep their shape in the route. Both macros accept optional `components`, `overrides`, and `wrapper` arguments.
+The [`mdx_page!`][mdx_page] macro compiles a single file and registers it as a route. The [`mdx_pages!`][mdx_pages] macro walks a directory, compiles every `.mdx` and `.md` file, and registers a handler per file. Route paths are the prefix, the subdirectory structure below the scanned directory, and the kebab-cased filename stem, so nested directories keep their shape in the route. A file named `index.mdx` or `index.md` is the exception: it serves the directory holding it, so `posts/my-post/index.mdx` is `/blog/my-post`. Both macros accept optional `components`, `overrides`, and `wrapper` arguments.
 
 ```rust,ignore
 use topcoat::mdx::mdx_pages;
