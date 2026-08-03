@@ -58,12 +58,15 @@ MDX files can carry YAML or TOML frontmatter at the top of the document, delimit
 
 [`mdx_pages!`] reads the `title`, `date`, `excerpt`, and `tags` fields of every file it scans into a compile-time index. Read that index through the generated accessor to build listings, tag pages, and sitemaps. See the [`mdx_pages!`] reference for the index shape.
 
+Pages are free to declare fields beyond those four. Each index entry carries the whole frontmatter block in `frontmatter_raw`, tagged with the syntax it was written in, so you can deserialize it into a type of your own. See [`MdxIndexEntry`] for the pattern.
+
 # Route Registration
 
 The [`mdx_page!`] macro compiles a single file and registers it as a route handler. The [`mdx_pages!`] macro walks a directory tree, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename.
 
 Both macros accept optional `components`, `overrides`, and `wrapper` arguments. See the macro reference docs for details.
 
+[`MdxIndexEntry`]: struct.MdxIndexEntry.html
 [`mdx_components!`]: macro.mdx_components.html
 [`mdx_page!`]: macro.mdx_page.html
 [`mdx_pages!`]: macro.mdx_pages.html

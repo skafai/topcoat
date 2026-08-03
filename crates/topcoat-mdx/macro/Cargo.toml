@@ -40,6 +40,11 @@ topcoat-mdx-grammar.workspace = true
 topcoat-view-grammar.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 markdown = "1.0"
+# Versions must match the ones above: tests deserialize the same frontmatter
+# the macro does, and two majors of a serde format in one crate would diverge.
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = "1.0"
+toml = "0.8"
 
 [lints]
 workspace = true

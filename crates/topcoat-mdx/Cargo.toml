@@ -15,6 +15,11 @@ topcoat-mdx-macro.workspace = true
 
 [dev-dependencies]
 topcoat = { workspace = true, features = ["mdx"] }
+# Doc examples deserialize frontmatter, so they need the same formats the
+# macro parses. Versions match topcoat-mdx-macro's.
+serde = { version = "1", features = ["derive"] }
+serde-saphyr = "1.0"
+toml = "0.8"
 
 [lints]
 workspace = true

@@ -105,10 +105,53 @@ A `&'static [MdxIndexEntry]` const named `MDX_INDEX_{DIR}` is emitted, where `{D
 Each `MdxIndexEntry` contains the following fields populated from frontmatter and file metadata:
 
 - `slug`: the kebab-cased route slug derived from the file stem
+- `path`: the full route path, including the prefix and any subdirectories
 - `title`: the `title` field from frontmatter, if present
 - `date`: the `date` field from frontmatter, if present
 - `excerpt`: the `excerpt` field from frontmatter, if present
 - `tags`: the `tags` field from frontmatter as a slice of strings, empty if absent
+- `frontmatter_raw`: the whole frontmatter block, delimiters stripped, empty when the page has none
+- `frontmatter_format`: whether that block is YAML, TOML, or absent
+- `word_count`: words in the page body, counted at compile time without the frontmatter
+
+## Custom frontmatter fields
+
+Pages often carry more than the four named fields. Deserialize `frontmatter_raw` into a type of your own to read the rest, choosing the deserializer from `frontmatter_format`:
+
+```rust,ignore
+use topcoat::mdx::{MdxFrontmatterFormat, MdxIndexEntry, mdx_pages};
+
+mdx_pages!("content/blog", prefix = "/blog");
+
+#[derive(serde::Deserialize)]
+struct PostMeta {
+    subtitle: Option<String>,
+    #[serde(rename = "publishDate")]
+    publish_date: String,
+}
+
+fn meta(entry: &MdxIndexEntry) -> Option<PostMeta> {
+    match entry.frontmatter_format {
+        MdxFrontmatterFormat::Yaml => serde_saphyr::from_str(entry.frontmatter_raw).ok(),
+        MdxFrontmatterFormat::Toml => toml::from_str(entry.frontmatter_raw).ok(),
+        MdxFrontmatterFormat::None => None,
+    }
+}
+```
+
+The parser strips the `---` and `+++` delimiters, so the syntax cannot be told from the string itself. Always read `frontmatter_format` rather than inspecting the text.
+
+Deserializing happens at runtime, once per call. Cache the result in a `LazyLock` if a listing page reads it for every request.
+
+## Reading time
+
+`word_count` counts whitespace-separated words in the body, so a reading estimate is a division by whatever rate suits your audience:
+
+```rust,ignore
+let minutes = entry.word_count.div_ceil(200);
+```
+
+Code blocks and component markup count toward the total, matching what reading-time tooling reports for a markdown file.
 
 ## Index accessor function
 

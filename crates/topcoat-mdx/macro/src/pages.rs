@@ -146,6 +146,35 @@ pub(crate) fn build_index(
         // Extract frontmatter data.
         let frontmatter = extract_frontmatter(&root);
 
+        // The whole block, tagged with its syntax, so a consumer can read
+        // fields the named ones do not cover.
+        let (fm_raw_lit, fm_format_expr) = match &frontmatter {
+            Some((fm_content, FrontmatterFormat::Yaml)) => (
+                LitStr::new(fm_content, span),
+                quote! { #topcoat_mdx::MdxFrontmatterFormat::Yaml },
+            ),
+            Some((fm_content, FrontmatterFormat::Toml)) => (
+                LitStr::new(fm_content, span),
+                quote! { #topcoat_mdx::MdxFrontmatterFormat::Toml },
+            ),
+            None => (
+                LitStr::new("", span),
+                quote! { #topcoat_mdx::MdxFrontmatterFormat::None },
+            ),
+        };
+
+        // Count words in the body only. The frontmatter node spans the whole
+        // block including its delimiters, so its end offset starts the body.
+        let body_start = match &root {
+            markdown::mdast::Node::Root(r) if frontmatter.is_some() => r
+                .children
+                .first()
+                .and_then(|node| node.position().map(|p| p.end.offset))
+                .unwrap_or(0),
+            _ => 0,
+        };
+        let word_count = content[body_start..].split_whitespace().count();
+
         // Derive slug from file stem using kebab-case.
         let slug = resolved
             .file_stem()
@@ -217,6 +246,9 @@ pub(crate) fn build_index(
                 date: #date_expr,
                 excerpt: #excerpt_expr,
                 tags: #tags_expr,
+                frontmatter_raw: #fm_raw_lit,
+                frontmatter_format: #fm_format_expr,
+                word_count: #word_count,
             }
         });
     }

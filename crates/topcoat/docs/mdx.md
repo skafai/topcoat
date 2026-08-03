@@ -60,7 +60,9 @@ tags:
 # Hello
 ```
 
-[`mdx_pages!`][mdx_pages] reads the `title`, `date`, `excerpt`, and `tags` fields of every scanned file into a compile-time index, reachable through a generated accessor:
+Frontmatter is not limited to those keys. [`mdx_pages!`][mdx_pages] reads `title`, `date`, `excerpt`, and `tags` into named fields, and hands the whole block to you as `frontmatter_raw` so a page can carry whatever else it needs. The index entry also records which syntax the block used, because the delimiters are gone by the time you read it.
+
+[`mdx_pages!`][mdx_pages] builds that index at compile time, reachable through a generated accessor:
 
 ```rust,ignore
 use topcoat::{Result, mdx::mdx_pages, router::page, view::view};
@@ -89,7 +91,7 @@ use topcoat::mdx::mdx_pages;
 mdx_pages!("content/blog", prefix = "/blog");
 ```
 
-`mdx_pages!` also emits a content index: a `&'static [MdxIndexEntry]` const named `MDX_INDEX_{DIR}` and an accessor function `mdx_index_{dir}()` for building blog listings and tag pages.
+`mdx_pages!` also emits a content index: a `&'static [MdxIndexEntry]` const named `MDX_INDEX_{DIR}` and an accessor function `mdx_index_{dir}()` for building blog listings and tag pages. Each entry carries the raw frontmatter and a body word count alongside the named fields; see the [`mdx_pages!`][mdx_pages] reference for deserializing custom fields into your own type.
 
 # HTML Element Overrides
 
