@@ -501,6 +501,67 @@ mod tests {
         );
     }
 
+    // ---- Custom field frontmatter tests ----
+
+    #[test]
+    fn extract_frontmatter_blog_post_yaml() {
+        // Blog post with custom fields: subtitle, publishDate,
+        // lastModifiedDate, keywords (in addition to title, tags, excerpt).
+        let content = "---\ntitle: \"Blog Post with Custom Metadata\"\nsubtitle: \"A subtitle for the post\"\npublishDate: \"2025-01-01\"\nlastModifiedDate: \"2025-06-01\"\ntags: [blog, example, test]\nexcerpt: \"An excerpt summarizing the blog post content.\"\nkeywords: [blog, example, metadata, keywords, test]\n---\n\n# Body";
+        let root = parse_to_root(content);
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some(), "should extract blog post frontmatter");
+        let (value, format) = fm.unwrap();
+        assert!(matches!(format, FrontmatterFormat::Yaml));
+        // Standard fields present
+        assert!(value.contains("title:"));
+        assert!(value.contains("excerpt:"));
+        assert!(value.contains("tags:"));
+        // Custom fields preserved in raw string
+        assert!(
+            value.contains("subtitle:"),
+            "subtitle should be in raw YAML"
+        );
+        assert!(
+            value.contains("publishDate:"),
+            "publishDate should be in raw YAML"
+        );
+        assert!(
+            value.contains("lastModifiedDate:"),
+            "lastModifiedDate should be in raw YAML"
+        );
+        assert!(
+            value.contains("keywords:"),
+            "keywords should be in raw YAML"
+        );
+    }
+
+    #[test]
+    fn extract_frontmatter_arbitrary_custom_fields() {
+        let content = "---\ntitle: \"Custom Fields Test\"\ncategory: technology\nauthor: \"Jane Doe\"\ncustom_key: \"custom_value\"\n---\n\n# Body";
+        let root = parse_to_root(content);
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some());
+        let (value, _) = fm.unwrap();
+        assert!(value.contains("category:"));
+        assert!(value.contains("author:"));
+        assert!(value.contains("custom_key:"));
+        assert!(value.contains("custom_value"));
+    }
+
+    #[test]
+    fn extract_frontmatter_toml_custom_fields() {
+        let content = "+++\ntitle = \"TOML Custom Fields\"\nsubtitle = \"Using TOML frontmatter\"\nmy_field = \"my_value\"\n[nested]\nkey = \"value\"\n+++\n\n# Body";
+        let root = parse_to_root(content);
+        let fm = extract_frontmatter(&root);
+        assert!(fm.is_some(), "should extract TOML with custom fields");
+        let (value, format) = fm.unwrap();
+        assert!(matches!(format, FrontmatterFormat::Toml));
+        assert!(value.contains("subtitle"));
+        assert!(value.contains("my_field"));
+        assert!(value.contains("nested"));
+    }
+
     // ---- Two-pass walk infrastructure tests (collect_definitions) ----
 
     #[test]
