@@ -199,13 +199,14 @@ pub(crate) fn parse_optional_overrides(
 // ---------------------------------------------------------------------------
 
 /// Input for `mdx_page!`: (`route_path`, `file_path`, [overrides = {...}],
-/// [components = {...}], [wrapper = Path])
+/// [components = {...}], [wrapper = Path], [frontmatter = Type])
 pub(crate) struct MdxPageInput {
     pub(crate) route_path: LitStr,
     pub(crate) file_path: LitStr,
     pub(crate) overrides: Option<Vec<(&'static str, SynPath)>>,
     pub(crate) components: Option<Vec<(String, SynPath)>>,
     pub(crate) wrapper: Option<SynPath>,
+    pub(crate) frontmatter: Option<SynPath>,
 }
 
 impl Parse for MdxPageInput {
@@ -217,11 +218,19 @@ impl Parse for MdxPageInput {
         let mut overrides = None;
         let mut components = None;
         let mut wrapper = None;
+        let mut frontmatter = None;
 
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
+            // A trailing comma after the last argument ends the list.
+            if input.is_empty() {
+                break;
+            }
             let kw: Ident = input.parse()?;
-            if kw == "overrides" {
+            if kw == "frontmatter" {
+                input.parse::<Token![=]>()?;
+                frontmatter = Some(input.parse()?);
+            } else if kw == "overrides" {
                 input.parse::<Token![=]>()?;
                 let content;
                 syn::braced!(content in input);
@@ -247,7 +256,7 @@ impl Parse for MdxPageInput {
             } else {
                 return Err(syn::Error::new(
                     kw.span(),
-                    "expected `overrides = { ... }`, `components = { ... }`, or `wrapper = Path`, found something else",
+                    "expected `overrides = { ... }`, `components = { ... }`, `wrapper = Path`, or `frontmatter = Type`, found something else",
                 ));
             }
         }
@@ -258,6 +267,7 @@ impl Parse for MdxPageInput {
             overrides,
             components,
             wrapper,
+            frontmatter,
         })
     }
 }
@@ -267,13 +277,14 @@ impl Parse for MdxPageInput {
 // ---------------------------------------------------------------------------
 
 /// Input for `mdx_pages!`: (`directory_path`, prefix = "/optional/prefix",
-/// components = {...}, overrides = {...}, wrapper = Path)
+/// components = {...}, overrides = {...}, wrapper = Path, frontmatter = Type)
 pub(crate) struct MdxPagesInput {
     pub(crate) directory_path: LitStr,
     pub(crate) prefix: Option<LitStr>,
     pub(crate) components: Option<Vec<(String, SynPath)>>,
     pub(crate) overrides: Option<Vec<(&'static str, SynPath)>>,
     pub(crate) wrapper: Option<SynPath>,
+    pub(crate) frontmatter: Option<SynPath>,
 }
 
 impl Parse for MdxPagesInput {
@@ -284,11 +295,19 @@ impl Parse for MdxPagesInput {
         let mut components = None;
         let mut overrides = None;
         let mut wrapper = None;
+        let mut frontmatter = None;
 
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
+            // A trailing comma after the last argument ends the list.
+            if input.is_empty() {
+                break;
+            }
             let kw: Ident = input.parse()?;
-            if kw == "prefix" {
+            if kw == "frontmatter" {
+                input.parse::<Token![=]>()?;
+                frontmatter = Some(input.parse()?);
+            } else if kw == "prefix" {
                 input.parse::<Token![=]>()?;
                 prefix = Some(input.parse()?);
             } else if kw == "components" {
@@ -317,7 +336,7 @@ impl Parse for MdxPagesInput {
             } else {
                 return Err(syn::Error::new(
                     kw.span(),
-                    "expected `prefix = \"/path\"`, `components = { ... }`, `overrides = { ... }`, or `wrapper = Path`",
+                    "expected `prefix = \"/path\"`, `components = { ... }`, `overrides = { ... }`, `wrapper = Path`, or `frontmatter = Type`",
                 ));
             }
         }
@@ -328,6 +347,7 @@ impl Parse for MdxPagesInput {
             components,
             overrides,
             wrapper,
+            frontmatter,
         })
     }
 }

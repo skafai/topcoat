@@ -5,7 +5,8 @@ use syn::Path as SynPath;
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
     walker::{
-        collect_definitions, extract_frontmatter, node::walk_footnote_section, walk_to_writer,
+        FrontmatterFormat, collect_definitions, extract_frontmatter, node::walk_footnote_section,
+        walk_to_writer,
     },
 };
 use topcoat_view_grammar::view::hir::{LowerView, ViewBuilder};
@@ -17,9 +18,11 @@ use topcoat_view_grammar::view::hir::{LowerView, ViewBuilder};
 /// Result of compiling an MDX file: the view tokens and how to wrap them.
 ///
 /// Frontmatter is parsed during the walk so that it does not render as body
-/// content, but it is not carried here: the macros that use this result emit
-/// expressions, with no place to hand frontmatter back to the caller.
+/// content. It is carried here as written, for macros that deserialize it into
+/// a type the caller named.
 pub(crate) struct CompiledMdxResult {
+    /// The page's frontmatter as written, and the syntax it used.
+    pub(crate) frontmatter: Option<(String, FrontmatterFormat)>,
     /// View tokens from the walker. When a wrapper was requested, these are
     /// produced by `Scope::emit_view()` (plain View expression, no
     /// async wrapper).
@@ -118,6 +121,7 @@ pub(crate) fn parse_and_walk_mdx(
     };
 
     Ok(CompiledMdxResult {
+        frontmatter: frontmatter_content,
         view_tokens: inner_tokens,
         has_wrapper: wrapper.is_some(),
         wrapper_path: wrapper.cloned(),

@@ -81,6 +81,71 @@ mod wrapper_test {
     }
 }
 
+// ---- mdx_pages! forwarding frontmatter to the wrapper ----
+
+// With `frontmatter = Type`, a wrapper takes the parsed metadata as a prop, so
+// a page header can be rendered from frontmatter the body never mentions.
+mod wrapper_frontmatter_test {
+    use serde::Deserialize;
+    use topcoat::{
+        context::CxTestBuilder,
+        view::{View, component, view},
+    };
+    use topcoat_mdx_macro::mdx_pages;
+
+    type Result<T = View> = topcoat::Result<T>;
+
+    #[derive(Deserialize)]
+    pub struct PostMeta {
+        pub subtitle: Option<String>,
+    }
+
+    // `meta` is an `Option` because a directory may hold pages that carry no
+    // frontmatter at all; those pass `None` rather than being rejected.
+    #[component]
+    async fn post_wrapper(#[default] child: View, meta: Option<&'static PostMeta>) -> Result {
+        view! {
+            <article>
+                if let Some(subtitle) = meta
+                    .and_then(|meta| meta.subtitle.as_deref()) {
+                    <p class="subtitle">(subtitle)</p>
+                }
+                (child)
+            </article>
+        }
+    }
+
+    mdx_pages!(
+        "tests/fixtures/custom-metadata",
+        prefix = "/wrapper-frontmatter",
+        wrapper = post_wrapper,
+        frontmatter = PostMeta
+    );
+
+    #[tokio::test]
+    async fn wrapper_renders_frontmatter_the_body_does_not_carry() {
+        let meta = mdx_index_tests_fixtures_custom_metadata()
+            .iter()
+            .find(|entry| entry.slug == "example-post")
+            .and_then(topcoat::mdx::MdxIndexEntry::meta)
+            .expect("the YAML fixture has metadata");
+
+        // `view!` renders components through a context named `__cx`, the same
+        // name the macro-generated route handlers bind.
+        let cx = CxTestBuilder::new().build();
+        let __cx = &cx;
+        let body = view! { <p>"Body content"</p> }.expect("body renders");
+        let view = view! { post_wrapper(child: body, meta: Some(meta)) }.expect("wrapper renders");
+
+        let html = view.render(&cx);
+        assert!(
+            html.contains("A subtitle for the post"),
+            "the subtitle only exists in frontmatter, so it proves the wrapper received it"
+        );
+        assert!(html.contains("Body content"), "the body still renders");
+    }
+}
+
 // ---- mdx_pages! with components and overrides ----
 
 #[allow(dead_code)]

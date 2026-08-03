@@ -60,6 +60,8 @@ MDX files can carry YAML or TOML frontmatter at the top of the document, delimit
 
 Pages are free to declare fields beyond those four. Each index entry carries the whole frontmatter block in `frontmatter_raw`, tagged with the syntax it was written in, so you can deserialize it into a type of your own. See [`MdxIndexEntry`] for the pattern.
 
+Passing `frontmatter = Type` to [`mdx_pages!`] hands that work to the macro instead: it picks the deserializer per page, parses once, and gives both the index entry and the page's wrapper component the result. That part is behind the `frontmatter` feature, since it is the only frontmatter handling that happens at runtime rather than while the macro expands.
+
 # Route Registration
 
 The [`mdx_page!`] macro compiles a single file and registers it as a route handler. The [`mdx_pages!`] macro walks a directory tree, compiles every `.mdx` and `.md` file, and registers a handler per file with kebab-case slugs derived from the filename.

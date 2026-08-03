@@ -74,6 +74,7 @@ members = [
     "examples/mdx/mdx-pages",
     "examples/mdx/overrides",
     "examples/mdx/content-index",
+    "examples/mdx/frontmatter",
     "examples/mdx/gfm",
 
     "benchmarks/topcoat",

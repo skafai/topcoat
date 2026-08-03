@@ -93,6 +93,8 @@ mdx_pages!("content/blog", prefix = "/blog");
 
 `mdx_pages!` also emits a content index: a `&'static [MdxIndexEntry]` const named `MDX_INDEX_{DIR}` and an accessor function `mdx_index_{dir}()` for building blog listings and tag pages. Each entry carries the raw frontmatter and a body word count alongside the named fields; see the [`mdx_pages!`][mdx_pages] reference for deserializing custom fields into your own type.
 
+Both macros also take `frontmatter = Type`, which deserializes each page's frontmatter into that type and hands it to the index and to the page's wrapper component. It is behind the `mdx-frontmatter` feature, separate from `mdx`: rendering resolves frontmatter while the macro expands, on the build machine, whereas reading it into a type of your own runs in the built program and needs the format parsers there.
+
 # HTML Element Overrides
 
 Both `mdx_page!` and `mdx_pages!` accept `overrides = { ... }` arguments that replace HTML elements with components. Content authors write normal markdown; the framework renders the elements through your components. This enables custom link handling, heading anchors, code block rendering, and more.

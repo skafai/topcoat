@@ -2,8 +2,8 @@ use std::path::Path;
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
-use quote::quote;
-use syn::{Ident, LitStr, Path as SynPath};
+use quote::{quote, quote_spanned};
+use syn::{Ident, LitStr, Path as SynPath, spanned::Spanned};
 use topcoat_core_grammar::paths::{
     topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
 };
@@ -109,11 +109,27 @@ pub(crate) fn scan_directory(
     entries
 }
 
+/// The tokens `mdx_pages!` emits for its content index.
+pub(crate) struct BuiltIndex {
+    /// One `MdxIndexEntry` literal per scanned page.
+    pub(crate) items: Vec<proc_macro2::TokenStream>,
+    /// Statics holding parsed frontmatter, emitted only when the macro was
+    /// given a `frontmatter = Type` argument.
+    pub(crate) meta_statics: Vec<proc_macro2::TokenStream>,
+    /// For each scanned page, the function reading its parsed frontmatter, so
+    /// that a wrapper component can be handed the same value the index holds.
+    /// Positions line up with the entries passed in.
+    pub(crate) meta_readers: Vec<Option<Ident>>,
+}
+
 /// Builds index entries from scanned pages.
 ///
 /// For each page, extracts title/date/tags/excerpt from frontmatter
 /// using generic `serde_value::Value` parsing, and derives the full
 /// route path from the scan directory, file location, and optional prefix.
+///
+/// When `frontmatter` names a type, each page that carries frontmatter also
+/// gets a static holding it deserialized into that type, parsed on first use.
 ///
 /// # Errors
 ///
@@ -123,11 +139,14 @@ pub(crate) fn build_index(
     scan_dir: &Path,
     entries: &[MdxPageEntry],
     prefix: Option<&str>,
+    frontmatter_type: Option<&SynPath>,
     span: Span,
-) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
+) -> Result<BuiltIndex, syn::Error> {
     let mut index_items = Vec::new();
+    let mut meta_statics = Vec::new();
+    let mut meta_readers = vec![None; entries.len()];
 
-    for entry in entries {
+    for (position, entry) in entries.iter().enumerate() {
         let resolved = entry
             .file_path
             .canonicalize()
@@ -174,6 +193,32 @@ pub(crate) fn build_index(
             _ => 0,
         };
         let word_count = content[body_start..].split_whitespace().count();
+
+        // With `frontmatter = Type`, deserializing happens once per page on
+        // first use. Names are positional: two files can share a stem, and the
+        // panic message names the file rather than the static.
+        let mut meta_fn_expr = quote! { None };
+        if let (Some(meta_type), Some((fm_content, format))) = (frontmatter_type, &frontmatter) {
+            let static_name = Ident::new(&format!("__MDX_META_{position}"), span);
+            let reader_name = Ident::new(&format!("__mdx_meta_{position}"), span);
+            let raw_lit = LitStr::new(fm_content, span);
+            let file_lit = LitStr::new(&resolved.display().to_string(), span);
+            let parse = match format {
+                FrontmatterFormat::Yaml => quote! { #topcoat_mdx::__private::parse_yaml },
+                FrontmatterFormat::Toml => quote! { #topcoat_mdx::__private::parse_toml },
+            };
+
+            meta_statics.push(quote! {
+                static #static_name: ::std::sync::LazyLock<#meta_type> =
+                    ::std::sync::LazyLock::new(|| #parse(#raw_lit, #file_lit));
+
+                fn #reader_name() -> &'static #meta_type {
+                    &#static_name
+                }
+            });
+            meta_fn_expr = quote! { Some(#reader_name) };
+            meta_readers[position] = Some(reader_name);
+        }
 
         // Derive slug from file stem using kebab-case.
         let slug = resolved
@@ -249,11 +294,16 @@ pub(crate) fn build_index(
                 frontmatter_raw: #fm_raw_lit,
                 frontmatter_format: #fm_format_expr,
                 word_count: #word_count,
+                meta_fn: #meta_fn_expr,
             }
         });
     }
 
-    Ok(index_items)
+    Ok(BuiltIndex {
+        items: index_items,
+        meta_statics,
+        meta_readers,
+    })
 }
 
 /// Extract a string field from a `serde_value::Value` Map.
@@ -302,6 +352,7 @@ pub(crate) fn generate_page_registration(
     components: &[(String, SynPath)],
     overrides: &[(&'static str, SynPath)],
     wrapper: Option<&SynPath>,
+    meta_arg: Option<&proc_macro2::TokenStream>,
     span: Span,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     let path_display = file_path.to_string_lossy();
@@ -339,10 +390,19 @@ pub(crate) fn generate_page_registration(
     // Apply wrapper if requested.
     let render_body = if result.has_wrapper {
         let wrapper_path = result.wrapper_path.as_ref().unwrap();
+        // A wrapper takes a `meta` prop exactly when the macro was given a
+        // frontmatter type, whether or not a given page carries frontmatter,
+        // so one wrapper serves the whole directory. Spanning the call at the
+        // `wrapper = ...` argument points the resulting error at the component
+        // the author named, rather than at tokens they cannot see.
+        let meta_prop = meta_arg.map(|arg| quote_spanned! { wrapper_path.span() => .meta(#arg) });
         quote! {
             {
                 use #topcoat_view::Component;
-                let props = #wrapper_path::props_builder().child(#view_tokens).build();
+                let props = #wrapper_path::props_builder()
+                    .child(#view_tokens)
+                    #meta_prop
+                    .build();
                 Component::render(#wrapper_path::default(), __cx, props).await
             }
         }
