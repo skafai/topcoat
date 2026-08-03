@@ -5,8 +5,7 @@ use syn::Path as SynPath;
 use topcoat_mdx_grammar::{
     parse::get_parse_options,
     walker::{
-        FrontmatterFormat, collect_definitions, extract_frontmatter, node::walk_footnote_section,
-        walk_to_writer,
+        collect_definitions, extract_frontmatter, node::walk_footnote_section, walk_to_writer,
     },
 };
 use topcoat_view_grammar::view::{ViewWriter, WriteView};
@@ -15,14 +14,12 @@ use topcoat_view_grammar::view::{ViewWriter, WriteView};
 // Common compile logic shared by compile_mdx! and mdx_page!
 // ---------------------------------------------------------------------------
 
-/// Result of compiling an MDX file: frontmatter content (if any) and view tokens.
+/// Result of compiling an MDX file: the view tokens and how to wrap them.
 ///
-/// The frontmatter can be YAML or TOML format; the format is tracked so
-/// [`mdx_page!`] can dispatch to the correct deserializer. When `has_wrapper`
-/// is true, the caller must wrap `view_tokens` in a component invocation.
+/// Frontmatter is parsed during the walk so that it does not render as body
+/// content, but it is not carried here: the macros that use this result emit
+/// expressions, with no place to hand frontmatter back to the caller.
 pub(crate) struct CompiledMdxResult {
-    /// Raw frontmatter content and its format (YAML or TOML).
-    pub(crate) frontmatter_content: Option<(String, FrontmatterFormat)>,
     /// View tokens from the walker. When a wrapper was requested, these are
     /// produced by `ViewWriter::new_nested()` (plain View expression, no
     /// async wrapper).
@@ -120,7 +117,6 @@ pub(crate) fn parse_and_walk_mdx(
     let inner_tokens = writer.into_token_stream();
 
     Ok(CompiledMdxResult {
-        frontmatter_content,
         view_tokens: inner_tokens,
         has_wrapper: wrapper.is_some(),
         wrapper_path: wrapper.cloned(),

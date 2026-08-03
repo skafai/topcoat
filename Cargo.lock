@@ -1612,7 +1612,10 @@ dependencies = [
 name = "mdx-content-index"
 version = "0.5.0"
 dependencies = [
+ "serde",
+ "serde-saphyr",
  "tokio",
+ "toml 0.8.23",
  "topcoat",
 ]
 
@@ -3253,6 +3256,9 @@ dependencies = [
 name = "topcoat-mdx"
 version = "0.5.0"
 dependencies = [
+ "serde",
+ "serde-saphyr",
+ "toml 0.8.23",
  "topcoat",
  "topcoat-mdx-macro",
 ]

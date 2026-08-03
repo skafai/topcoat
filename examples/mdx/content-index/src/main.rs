@@ -1,7 +1,10 @@
+use std::{collections::HashMap, sync::LazyLock};
+
+use serde::Deserialize;
 use topcoat::{
     Result,
     context::Cx,
-    mdx::{MdxIndexEntry, mdx_pages},
+    mdx::{MdxFrontmatterFormat, MdxIndexEntry, mdx_pages},
     router::{
         Router, RouterBuilderDiscoverExt, layout, page, path_param_segment, response::Response,
         route,
@@ -24,6 +27,37 @@ fn posts_by_date() -> Vec<&'static MdxIndexEntry> {
     posts
 }
 
+// --- Custom frontmatter ------------------------------------------------------
+
+// `MdxIndexEntry` names four frontmatter fields. Everything else a post
+// declares arrives as a raw string, so a type of your own describes the rest.
+#[derive(Deserialize)]
+struct PostMeta {
+    subtitle: Option<String>,
+    author: Option<String>,
+}
+
+/// The custom fields of every post, parsed once and keyed by slug.
+///
+/// Deserializing is a runtime cost, so a listing that renders on every request
+/// should not repeat it. Posts whose frontmatter does not match are left out
+/// rather than bringing the page down.
+static POST_META: LazyLock<HashMap<&'static str, PostMeta>> = LazyLock::new(|| {
+    mdx_index_posts()
+        .iter()
+        .filter_map(|post| {
+            let meta = match post.frontmatter_format {
+                // The delimiters are stripped during parsing, so the syntax
+                // has to be read from the entry rather than from the string.
+                MdxFrontmatterFormat::Yaml => serde_saphyr::from_str(post.frontmatter_raw).ok()?,
+                MdxFrontmatterFormat::Toml => toml::from_str(post.frontmatter_raw).ok()?,
+                MdxFrontmatterFormat::None => return None,
+            };
+            Some((post.slug, meta))
+        })
+        .collect()
+});
+
 /// Every tag used across the scanned files, deduplicated and sorted.
 fn all_tags() -> Vec<&'static str> {
     let mut tags: Vec<&'static str> = mdx_index_posts()
@@ -39,12 +73,31 @@ fn all_tags() -> Vec<&'static str> {
 
 #[component]
 async fn post_card(post: &'static MdxIndexEntry) -> Result {
+    let meta = POST_META.get(post.slug);
+    // Words per minute is a presentation choice, which is why the index
+    // reports a word count rather than a formatted string.
+    let minutes = post.word_count.div_ceil(200).max(1);
+
     view! {
         <li class="border-b py-4">
             <a href=(post.path) class="text-lg font-medium">
                 (post.title.unwrap_or(post.slug))
             </a>
-            <p class="text-sm text-gray-500">(post.date.unwrap_or("undated"))</p>
+            if let Some(subtitle) = meta
+                .and_then(|meta| meta.subtitle.as_deref()) {
+                <p class="text-gray-600">(subtitle)</p>
+            }
+            <p class="text-sm text-gray-500">
+                (post.date.unwrap_or("undated"))
+                if let Some(author) = meta
+                    .and_then(|meta| meta.author.as_deref()) {
+                    " by "
+                    (author)
+                }
+                " - "
+                (minutes)
+                " min read"
+            </p>
             if let Some(excerpt) = post.excerpt {
                 <p class="mt-1">(excerpt)</p>
             }

@@ -16,7 +16,7 @@ use std::path::Path;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Ident, LitStr, Path as SynPath};
+use syn::{Ident, Path as SynPath};
 use topcoat_core_grammar::paths::{
     topcoat_context, topcoat_error, topcoat_inventory, topcoat_mdx, topcoat_router, topcoat_view,
 };
@@ -101,29 +101,10 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         quote! { #view_tokens }
     };
 
-    // If frontmatter exists, emit it as a const alongside the view tokens.
-    // Wrap in a block so the const is scoped and the block evaluates to the view.
-    if let Some((content, _format)) = result.frontmatter_content {
-        // Derive a unique const name from the file stem (uppercased per Rust conventions).
-        let file_stem = Path::new(&path_str)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("MDX")
-            .replace('-', "_")
-            .to_uppercase();
-        let const_name = Ident::new(&format!("__MDX_FRONTMATTER_{file_stem}"), lit_str.span());
-        let yaml_lit = LitStr::new(&content, lit_str.span());
-
-        quote! {
-            {
-                const #const_name: &str = #yaml_lit;
-                #final_tokens
-            }
-        }
-        .into()
-    } else {
-        quote! { #final_tokens }.into()
-    }
+    // Frontmatter is parsed to keep it out of the rendered body, but
+    // `compile_mdx!` is an expression macro and has nowhere to hand it back.
+    // Read frontmatter through `mdx_pages!` and `MdxIndexEntry` instead.
+    quote! { #final_tokens }.into()
 }
 
 // ---------------------------------------------------------------------------
