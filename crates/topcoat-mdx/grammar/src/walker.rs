@@ -268,7 +268,13 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
     match node {
         markdown::mdast::Node::Root(r) => walk_nodes(ctx, &r.children).into_vec(),
         markdown::mdast::Node::Paragraph(p) => {
-            vec![helpers::html_element("p", walk_nodes(ctx, &p.children))]
+            let children = walk_nodes(ctx, &p.children);
+            vec![jsx::element_or_override(
+                ctx,
+                "p",
+                topcoat_view_grammar::attributes::Attributes::default(),
+                children,
+            )]
         }
         markdown::mdast::Node::Heading(h) => {
             let tag = format!("h{}", h.depth);
@@ -307,21 +313,29 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             vec![helpers::html_element("em", walk_nodes(ctx, &e.children))]
         }
         markdown::mdast::Node::Strong(s) => {
-            vec![helpers::html_element(
+            let children = walk_nodes(ctx, &s.children);
+            vec![jsx::element_or_override(
+                ctx,
                 "strong",
-                walk_nodes(ctx, &s.children),
+                topcoat_view_grammar::attributes::Attributes::default(),
+                children,
             )]
         }
         markdown::mdast::Node::InlineCode(c) => {
-            vec![helpers::html_element(
+            vec![jsx::element_or_override(
+                ctx,
                 "code",
+                topcoat_view_grammar::attributes::Attributes::default(),
                 Nodes::from(vec![helpers::text_node(&c.value)]),
             )]
         }
         markdown::mdast::Node::Blockquote(b) => {
-            vec![helpers::html_element(
+            let children = walk_nodes(ctx, &b.children);
+            vec![jsx::element_or_override(
+                ctx,
                 "blockquote",
-                walk_nodes(ctx, &b.children),
+                topcoat_view_grammar::attributes::Attributes::default(),
+                children,
             )]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
