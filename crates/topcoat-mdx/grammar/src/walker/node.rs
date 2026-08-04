@@ -11,9 +11,9 @@ use super::{
     helpers::{
         create_attribute, create_attribute_bool, create_attribute_data, html_element,
         normal_element_with_attrs, parse_code_meta, self_closing_element, text_node,
-        void_element_with_attrs, with_attributes,
+        with_attributes,
     },
-    jsx::{build_override_component, try_find_override_path},
+    jsx::{element_or_override, void_element_or_override},
 };
 
 // ---------------------------------------------------------------------------
@@ -50,12 +50,7 @@ pub(crate) fn walk_link(ctx: &WalkContext, link: &markdown::mdast::Link) -> Node
     let attributes = with_attributes(attrs);
     let children = super::walk_nodes(ctx, &link.children);
     // Check for override AFTER is_safe_url() passes (XSS protection preserved).
-    if let Some(path) = try_find_override_path(ctx, "a") {
-        return build_override_component(path, &attributes, children, ctx.span);
-    }
-    Node::Element(Box::new(normal_element_with_attrs(
-        "a", attributes, children,
-    )))
+    element_or_override(ctx, "a", attributes, children)
 }
 
 /// Walks an image node: `<img src="url" alt="alt" title="...">`.
@@ -75,10 +70,7 @@ pub(crate) fn walk_image(ctx: &WalkContext, image: &markdown::mdast::Image) -> N
     }
     let attributes = with_attributes(attrs);
     // Check for override before constructing the <img> void element.
-    if let Some(path) = try_find_override_path(ctx, "img") {
-        return build_override_component(path, &attributes, Nodes::new(), ctx.span);
-    }
-    Node::Element(Box::new(void_element_with_attrs("img", attributes)))
+    void_element_or_override(ctx, "img", attributes)
 }
 
 /// Walks a fenced code block: `<pre><code class="language-{lang}">...</code></pre>`.
@@ -119,14 +111,7 @@ pub(crate) fn walk_code_block(ctx: &WalkContext, code: &markdown::mdast::Code) -
     let pre_attributes = with_attributes(pre_attrs);
 
     // Check for override at the <pre> level (outermost element).
-    if let Some(path) = try_find_override_path(ctx, "pre") {
-        return build_override_component(path, &pre_attributes, pre_children, ctx.span);
-    }
-    Node::Element(Box::new(normal_element_with_attrs(
-        "pre",
-        pre_attributes,
-        pre_children,
-    )))
+    element_or_override(ctx, "pre", pre_attributes, pre_children)
 }
 
 /// Walks a list: `<ul>` or `<ol>` with `<li>` children.
@@ -306,12 +291,7 @@ pub(crate) fn walk_link_reference(
         let attributes = with_attributes(attrs);
         let children = super::walk_nodes(ctx, &link_ref.children);
         // Check for override AFTER is_safe_url() passes (XSS protection preserved).
-        if let Some(path) = try_find_override_path(ctx, "a") {
-            return build_override_component(path, &attributes, children, ctx.span);
-        }
-        return Node::Element(Box::new(normal_element_with_attrs(
-            "a", attributes, children,
-        )));
+        return element_or_override(ctx, "a", attributes, children);
     }
     // Unknown reference: emit a compile-time error.
     ctx.errors.borrow_mut().push(format!(
@@ -353,10 +333,7 @@ pub(crate) fn walk_image_reference(
         }
         let attributes = with_attributes(attrs);
         // Check for override before constructing the <img> void element.
-        if let Some(path) = try_find_override_path(ctx, "img") {
-            return build_override_component(path, &attributes, Nodes::new(), ctx.span);
-        }
-        return Node::Element(Box::new(void_element_with_attrs("img", attributes)));
+        return void_element_or_override(ctx, "img", attributes);
     }
     // Unknown reference: emit a compile-time error.
     ctx.errors.borrow_mut().push(format!(
