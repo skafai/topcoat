@@ -299,18 +299,7 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             };
             let attrs = vec![helpers::create_attribute("id", &id_value)];
             let attributes = helpers::with_attributes(attrs);
-            if let Some(path) = jsx::try_find_override_path(ctx, &tag) {
-                vec![jsx::build_override_component(
-                    path,
-                    &attributes,
-                    children,
-                    ctx.span,
-                )]
-            } else {
-                vec![Node::Element(Box::new(helpers::normal_element_with_attrs(
-                    &tag, attributes, children,
-                )))]
-            }
+            vec![jsx::element_or_override(ctx, &tag, attributes, children)]
         }
         markdown::mdast::Node::Text(t) => {
             vec![helpers::text_node(&t.value)]
@@ -337,16 +326,11 @@ pub fn walk_node(ctx: &WalkContext, node: &markdown::mdast::Node) -> Vec<Node> {
             )]
         }
         markdown::mdast::Node::ThematicBreak(_) => {
-            if let Some(path) = jsx::try_find_override_path(ctx, "hr") {
-                vec![jsx::build_override_component(
-                    path,
-                    &topcoat_view_grammar::attributes::Attributes::default(),
-                    Nodes::new(),
-                    ctx.span,
-                )]
-            } else {
-                vec![Node::Element(Box::new(helpers::void_element("hr")))]
-            }
+            vec![jsx::void_element_or_override(
+                ctx,
+                "hr",
+                topcoat_view_grammar::attributes::Attributes::default(),
+            )]
         }
         markdown::mdast::Node::Break(_) => {
             vec![Node::Element(Box::new(helpers::void_element("br")))]
