@@ -820,6 +820,118 @@ mod tests {
     }
 
     #[test]
+    fn walk_paragraph_with_p_override() {
+        let component_path: Path = syn::parse_quote!(components::paragraph);
+        let leaked: &'static str = String::leak("p".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "Plain text");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "p override should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_paragraph_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "Plain text");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("p")),
+            "paragraph without override should produce <p>"
+        );
+    }
+
+    #[test]
+    fn walk_strong_with_override() {
+        let component_path: Path = syn::parse_quote!(components::bold);
+        let leaked: &'static str = String::leak("strong".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "**bold**");
+        if let Node::Element(p) = &nodes[0] {
+            let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
+            assert!(has_component, "strong override should produce Component");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn walk_strong_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "**bold**");
+        if let Node::Element(p) = &nodes[0] {
+            let has_strong = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("strong")
+                } else {
+                    false
+                }
+            });
+            assert!(has_strong, "strong without override should produce <strong>");
+        }
+    }
+
+    #[test]
+    fn walk_blockquote_with_override() {
+        let component_path: Path = syn::parse_quote!(components::quote);
+        let leaked: &'static str = String::leak("blockquote".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "> quoted");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "blockquote override should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_blockquote_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "> quoted");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("blockquote")),
+            "blockquote without override should produce <blockquote>"
+        );
+    }
+
+    #[test]
+    fn walk_inline_code_with_override() {
+        let component_path: Path = syn::parse_quote!(components::inline_code);
+        let leaked: &'static str = String::leak("code".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "`inline`");
+        if let Node::Element(p) = &nodes[0] {
+            let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
+            assert!(has_component, "inline code override should produce Component");
+        } else {
+            panic!("expected paragraph element");
+        }
+    }
+
+    #[test]
+    fn walk_inline_code_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "`inline`");
+        if let Node::Element(p) = &nodes[0] {
+            let has_code = p.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("code")
+                } else {
+                    false
+                }
+            });
+            assert!(has_code, "inline code without override should produce <code>");
+        }
+    }
+
+    #[test]
     fn walk_context_with_overrides() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
         let leaked: &'static str = String::leak("a".to_string());
