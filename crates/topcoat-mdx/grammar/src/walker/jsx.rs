@@ -871,7 +871,10 @@ mod tests {
                     false
                 }
             });
-            assert!(has_strong, "strong without override should produce <strong>");
+            assert!(
+                has_strong,
+                "strong without override should produce <strong>"
+            );
         }
     }
 
@@ -909,7 +912,10 @@ mod tests {
         let nodes = parse_and_walk_ctx(&ctx, "`inline`");
         if let Node::Element(p) = &nodes[0] {
             let has_component = p.children().iter().any(|c| matches!(c, Node::Component(_)));
-            assert!(has_component, "inline code override should produce Component");
+            assert!(
+                has_component,
+                "inline code override should produce Component"
+            );
         } else {
             panic!("expected paragraph element");
         }
@@ -927,7 +933,10 @@ mod tests {
                     false
                 }
             });
-            assert!(has_code, "inline code without override should produce <code>");
+            assert!(
+                has_code,
+                "inline code without override should produce <code>"
+            );
         }
     }
 
@@ -979,8 +988,14 @@ mod tests {
         let nodes = parse_and_walk_ctx(&ctx, "- item");
         assert_eq!(nodes.len(), 1);
         if let Node::Element(ul) = &nodes[0] {
-            let has_component = ul.children().iter().any(|c| matches!(c, Node::Component(_)));
-            assert!(has_component, "li override should produce Component inside <ul>");
+            let has_component = ul
+                .children()
+                .iter()
+                .any(|c| matches!(c, Node::Component(_)));
+            assert!(
+                has_component,
+                "li override should produce Component inside <ul>"
+            );
         } else {
             panic!("expected <ul> element (only li is overridden, not ul)");
         }
@@ -1074,8 +1089,14 @@ mod tests {
                     }
                 })
                 .expect("thead should have tr");
-            let has_component = tr.children().iter().any(|c| matches!(c, Node::Component(_)));
-            assert!(has_component, "th override should produce Component inside <tr>");
+            let has_component = tr
+                .children()
+                .iter()
+                .any(|c| matches!(c, Node::Component(_)));
+            assert!(
+                has_component,
+                "th override should produce Component inside <tr>"
+            );
         } else {
             panic!("expected <table> element (only th is overridden, not table)");
         }
@@ -1111,8 +1132,14 @@ mod tests {
                     }
                 })
                 .expect("tbody should have tr");
-            let has_component = tr.children().iter().any(|c| matches!(c, Node::Component(_)));
-            assert!(has_component, "td override should produce Component inside <tr>");
+            let has_component = tr
+                .children()
+                .iter()
+                .any(|c| matches!(c, Node::Component(_)));
+            assert!(
+                has_component,
+                "td override should produce Component inside <tr>"
+            );
         } else {
             panic!("expected <table> element (only td is overridden, not table)");
         }
@@ -1125,8 +1152,14 @@ mod tests {
         if let Node::Element(table) = &nodes[0] {
             let header_cell_found = find_element_recursive(table, "th").is_some();
             let data_cell_found = find_element_recursive(table, "td").is_some();
-            assert!(header_cell_found, "table without override should still have <th>");
-            assert!(data_cell_found, "table without override should still have <td>");
+            assert!(
+                header_cell_found,
+                "table without override should still have <th>"
+            );
+            assert!(
+                data_cell_found,
+                "table without override should still have <td>"
+            );
         }
     }
 
