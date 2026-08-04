@@ -286,6 +286,39 @@ pub fn walk_jsx_text_element(
     }))
 }
 
+/// Builds a normal (non-void) element for `tag`, or the registered override
+/// component if one exists. Centralizes the find-and-branch that was
+/// previously duplicated at each element-construction call site.
+pub(crate) fn element_or_override(
+    ctx: &WalkContext,
+    tag: &str,
+    attributes: Attributes,
+    children: Nodes,
+) -> Node {
+    if let Some(path) = try_find_override_path(ctx, tag) {
+        build_override_component(path, &attributes, children, ctx.span)
+    } else {
+        Node::Element(Box::new(super::helpers::normal_element_with_attrs(
+            tag, attributes, children,
+        )))
+    }
+}
+
+/// Same as `element_or_override`, for void elements (no children).
+pub(crate) fn void_element_or_override(
+    ctx: &WalkContext,
+    tag: &str,
+    attributes: Attributes,
+) -> Node {
+    if let Some(path) = try_find_override_path(ctx, tag) {
+        build_override_component(path, &attributes, Nodes::new(), ctx.span)
+    } else {
+        Node::Element(Box::new(super::helpers::void_element_with_attrs(
+            tag, attributes,
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use syn::{Lit, LitBool, Path};
@@ -734,6 +767,56 @@ mod tests {
         } else {
             panic!("expected paragraph element");
         }
+    }
+
+    #[test]
+    fn element_or_override_hits() {
+        let component_path: Path = syn::parse_quote!(components::custom_p);
+        let leaked: &'static str = String::leak("p".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let attrs = Attributes::default();
+        let children = Nodes::from(vec![super::super::helpers::text_node("hi")]);
+        let result = element_or_override(&ctx, "p", attrs, children);
+        assert!(
+            matches!(result, Node::Component(_)),
+            "registered tag should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn element_or_override_misses() {
+        let ctx = WalkContext::empty();
+        let attrs = Attributes::default();
+        let children = Nodes::from(vec![super::super::helpers::text_node("hi")]);
+        let result = element_or_override(&ctx, "p", attrs, children);
+        assert!(
+            matches!(result, Node::Element(e) if e.name().string_name().as_deref() == Some("p")),
+            "unregistered tag should produce plain <p> element"
+        );
+    }
+
+    #[test]
+    fn void_element_or_override_hits() {
+        let component_path: Path = syn::parse_quote!(components::custom_hr);
+        let leaked: &'static str = String::leak("hr".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let result = void_element_or_override(&ctx, "hr", Attributes::default());
+        assert!(
+            matches!(result, Node::Component(_)),
+            "registered void tag should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn void_element_or_override_misses() {
+        let ctx = WalkContext::empty();
+        let result = void_element_or_override(&ctx, "hr", Attributes::default());
+        assert!(
+            matches!(result, Node::Element(e) if e.name().string_name().as_deref() == Some("hr")),
+            "unregistered void tag should produce plain <hr> element"
+        );
     }
 
     #[test]
