@@ -230,7 +230,7 @@ pub(crate) fn walk_table(ctx: &WalkContext, table: &markdown::mdast::Table) -> N
         child_nodes.push(tbody);
     }
 
-    html_element("table", Nodes::from(child_nodes))
+    element_or_override(ctx, "table", Attributes::default(), Nodes::from(child_nodes))
 }
 
 /// Walks a table cell: `<th>` or `<td>` with optional alignment style.
@@ -258,9 +258,7 @@ pub(crate) fn walk_table_cell_inner(
     // Cell children are Node variants (Text, Emphasis, etc.), not TableCell.
     let children = super::walk_nodes(ctx, &cell.children);
     let attributes = with_attributes(attrs);
-    Node::Element(Box::new(normal_element_with_attrs(
-        tag, attributes, children,
-    )))
+    element_or_override(ctx, tag, attributes, children)
 }
 
 /// Walks a delete (strikethrough) node: `<del>...</del>`.
