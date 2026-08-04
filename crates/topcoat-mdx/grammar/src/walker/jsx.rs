@@ -932,6 +932,77 @@ mod tests {
     }
 
     #[test]
+    fn walk_unordered_list_with_ul_override() {
+        let component_path: Path = syn::parse_quote!(components::list);
+        let leaked: &'static str = String::leak("ul".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "- item");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "ul override should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_ordered_list_with_ol_override() {
+        let component_path: Path = syn::parse_quote!(components::list);
+        let leaked: &'static str = String::leak("ol".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "1. item");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "ol override should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_list_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "- item");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("ul")),
+            "list without override should produce <ul>"
+        );
+    }
+
+    #[test]
+    fn walk_list_item_with_li_override() {
+        let component_path: Path = syn::parse_quote!(components::item);
+        let leaked: &'static str = String::leak("li".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "- item");
+        assert_eq!(nodes.len(), 1);
+        if let Node::Element(ul) = &nodes[0] {
+            let has_component = ul.children().iter().any(|c| matches!(c, Node::Component(_)));
+            assert!(has_component, "li override should produce Component inside <ul>");
+        } else {
+            panic!("expected <ul> element (only li is overridden, not ul)");
+        }
+    }
+
+    #[test]
+    fn walk_list_item_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "- item");
+        if let Node::Element(ul) = &nodes[0] {
+            let has_li = ul.children().iter().any(|c| {
+                if let Node::Element(e) = c {
+                    e.name().string_name().as_deref() == Some("li")
+                } else {
+                    false
+                }
+            });
+            assert!(has_li, "list item without override should produce <li>");
+        }
+    }
+
+    #[test]
     fn walk_context_with_overrides() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
         let leaked: &'static str = String::leak("a".to_string());

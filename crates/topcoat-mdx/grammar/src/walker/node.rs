@@ -4,7 +4,10 @@
 //! lists, tables, strikethrough, etc. They construct `Node` values using
 //! the helpers in `helpers.rs` and check for overrides via `jsx.rs`.
 
-use topcoat_view_grammar::view::{Node, Nodes};
+use topcoat_view_grammar::{
+    attributes::Attributes,
+    view::{Node, Nodes},
+};
 
 use super::{
     WalkContext,
@@ -126,7 +129,7 @@ pub(crate) fn walk_list(ctx: &WalkContext, list: &markdown::mdast::List) -> Node
             other => children.extend(super::walk_node(ctx, other)),
         }
     }
-    html_element(tag, Nodes::from(children))
+    element_or_override(ctx, tag, Attributes::default(), Nodes::from(children))
 }
 
 /// Walks a list item: `<li>` with optional leading checkbox for task lists.
@@ -153,7 +156,7 @@ pub(crate) fn walk_list_item(ctx: &WalkContext, item: &markdown::mdast::ListItem
         }
     }
     children.extend(super::walk_nodes(ctx, &item.children).into_vec());
-    html_element("li", Nodes::from(children))
+    element_or_override(ctx, "li", Attributes::default(), Nodes::from(children))
 }
 
 /// Walks a table: `<table><thead>...</thead><tbody>...</tbody></table>`.
