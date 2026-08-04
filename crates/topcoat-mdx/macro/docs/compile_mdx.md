@@ -79,7 +79,7 @@ compile_mdx!(
 )
 ```
 
-The following HTML elements can be overridden: `a`, `h1` through `h6`, `img`, `pre`, and `hr`. Unknown reference tags produce a compile error.
+The following HTML elements can be overridden: `a`, `h1` through `h6`, `img`, `pre`, `hr`, `p`, `strong`, `blockquote`, `code` (inline code only -- fenced code blocks are overridden via `pre`), `ul`, `ol`, `li`, `table`, `th`, and `td`. Unknown reference tags produce a compile error.
 
 ## With wrapper
 

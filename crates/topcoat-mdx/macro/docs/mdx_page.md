@@ -64,7 +64,7 @@ mdx_page!(
 );
 ```
 
-The following HTML elements can be overridden: `a`, `h1` through `h6`, `img`, `pre`, and `hr`. When a link element is overridden, URL safety checks run before the override component is invoked.
+The following HTML elements can be overridden: `a`, `h1` through `h6`, `img`, `pre`, `hr`, `p`, `strong`, `blockquote`, `code` (inline code only -- fenced code blocks are overridden via `pre`), `ul`, `ol`, `li`, `table`, `th`, and `td`. When a link or image element is overridden, URL safety checks run before the override component is invoked.
 
 ## Wrapper
 
