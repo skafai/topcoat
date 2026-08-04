@@ -1003,6 +1003,134 @@ mod tests {
     }
 
     #[test]
+    fn walk_table_with_override() {
+        let component_path: Path = syn::parse_quote!(components::data_table);
+        let leaked: &'static str = String::leak("table".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "| A |\n|---|\n| 1 |");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Component(_)),
+            "table override should produce Node::Component"
+        );
+    }
+
+    #[test]
+    fn walk_table_without_override_falls_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "| A |\n|---|\n| 1 |");
+        assert_eq!(nodes.len(), 1);
+        assert!(
+            matches!(&nodes[0], Node::Element(e) if e.name().string_name().as_deref() == Some("table")),
+            "table without override should produce <table>"
+        );
+    }
+
+    fn find_element_recursive<'a>(
+        element: &'a topcoat_view_grammar::view::Element,
+        tag: &str,
+    ) -> Option<&'a topcoat_view_grammar::view::Element> {
+        if element.name().string_name().as_deref() == Some(tag) {
+            return Some(element);
+        }
+        for child in element.children() {
+            if let Node::Element(inner) = child
+                && let Some(found) = find_element_recursive(inner, tag)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn walk_table_cell_with_th_override() {
+        let component_path: Path = syn::parse_quote!(components::header_cell);
+        let leaked: &'static str = String::leak("th".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "| A |\n|---|\n| 1 |");
+        if let Node::Element(table) = &nodes[0] {
+            let thead = table
+                .children()
+                .iter()
+                .find_map(|c| {
+                    if let Node::Element(e) = c {
+                        (e.name().string_name().as_deref() == Some("thead")).then_some(e.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .expect("table should have thead");
+            let tr = thead
+                .children()
+                .iter()
+                .find_map(|c| {
+                    if let Node::Element(e) = c {
+                        (e.name().string_name().as_deref() == Some("tr")).then_some(e.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .expect("thead should have tr");
+            let has_component = tr.children().iter().any(|c| matches!(c, Node::Component(_)));
+            assert!(has_component, "th override should produce Component inside <tr>");
+        } else {
+            panic!("expected <table> element (only th is overridden, not table)");
+        }
+    }
+
+    #[test]
+    fn walk_table_cell_with_td_override() {
+        let component_path: Path = syn::parse_quote!(components::data_cell);
+        let leaked: &'static str = String::leak("td".to_string());
+        let overrides: [(&'static str, Path); 1] = [(leaked as &'static str, component_path)];
+        let ctx = WalkContext::new(&[], &overrides, Span::call_site());
+        let nodes = parse_and_walk_ctx(&ctx, "| A |\n|---|\n| 1 |");
+        if let Node::Element(table) = &nodes[0] {
+            let tbody = table
+                .children()
+                .iter()
+                .find_map(|c| {
+                    if let Node::Element(e) = c {
+                        (e.name().string_name().as_deref() == Some("tbody")).then_some(e.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .expect("table should have tbody");
+            let tr = tbody
+                .children()
+                .iter()
+                .find_map(|c| {
+                    if let Node::Element(e) = c {
+                        (e.name().string_name().as_deref() == Some("tr")).then_some(e.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .expect("tbody should have tr");
+            let has_component = tr.children().iter().any(|c| matches!(c, Node::Component(_)));
+            assert!(has_component, "td override should produce Component inside <tr>");
+        } else {
+            panic!("expected <table> element (only td is overridden, not table)");
+        }
+    }
+
+    #[test]
+    fn walk_table_cells_without_override_fall_through() {
+        let ctx = WalkContext::empty();
+        let nodes = parse_and_walk_ctx(&ctx, "| A |\n|---|\n| 1 |");
+        if let Node::Element(table) = &nodes[0] {
+            let header_cell_found = find_element_recursive(table, "th").is_some();
+            let data_cell_found = find_element_recursive(table, "td").is_some();
+            assert!(header_cell_found, "table without override should still have <th>");
+            assert!(data_cell_found, "table without override should still have <td>");
+        }
+    }
+
+    #[test]
     fn walk_context_with_overrides() {
         let component_path: Path = syn::parse_quote!(components::custom_link);
         let leaked: &'static str = String::leak("a".to_string());
