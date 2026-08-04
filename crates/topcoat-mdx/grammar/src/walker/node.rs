@@ -230,7 +230,12 @@ pub(crate) fn walk_table(ctx: &WalkContext, table: &markdown::mdast::Table) -> N
         child_nodes.push(tbody);
     }
 
-    element_or_override(ctx, "table", Attributes::default(), Nodes::from(child_nodes))
+    element_or_override(
+        ctx,
+        "table",
+        Attributes::default(),
+        Nodes::from(child_nodes),
+    )
 }
 
 /// Walks a table cell: `<th>` or `<td>` with optional alignment style.

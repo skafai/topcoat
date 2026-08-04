@@ -3024,7 +3024,7 @@ dependencies = [
  "serde_json",
  "syn",
  "tokio",
- "toml 1.1.2+spec-1.1.0",
+ "toml",
  "topcoat",
  "topcoat-asset",
  "topcoat-core",
