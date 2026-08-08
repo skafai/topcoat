@@ -3,6 +3,8 @@ use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
 };
+use topcoat_core_grammar::ParseOption;
+use topcoat_view_grammar::leading_cx::LeadingCx;
 
 // ---------------------------------------------------------------------------
 // compile_mdx! input parsing
@@ -26,17 +28,20 @@ impl Parse for CompPair {
 /// Input for `compile_mdx!`: either two-arg (registry + path) or one-arg (path).
 pub(crate) enum CompileMdxInput {
     TwoArgs {
+        cx: Option<LeadingCx>,
         components: Vec<(String, SynPath)>,
         wrapper: Option<SynPath>,
         lit_str: LitStr,
     },
     TwoArgsWithOverrides {
+        cx: Option<LeadingCx>,
         components: Vec<(String, SynPath)>,
         overrides: Vec<(&'static str, SynPath)>,
         wrapper: Option<SynPath>,
         lit_str: LitStr,
     },
     OneArg {
+        cx: Option<LeadingCx>,
         lit_str: LitStr,
     },
 }
@@ -67,6 +72,11 @@ pub(crate) fn parse_component_braces(content: ParseStream) -> syn::Result<Vec<(S
 
 impl Parse for CompileMdxInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Leading `cx =>` argument, mirroring `view! { cx => ... }`. Omitted
+        // inside a `#[component]`, `#[page]`, `#[layout]`, or `#[shard]`,
+        // where the context is available implicitly.
+        let cx = input.call(LeadingCx::parse_option)?;
+
         // Pattern 1: { Ident => Path, ... } [, overrides = { "tag" => Path, ... }]
         // [, wrapper = Path], "path.mdx": direct braced block
         if input.peek(syn::token::Brace) {
@@ -79,12 +89,14 @@ impl Parse for CompileMdxInput {
             let lit_str: LitStr = input.parse()?;
             return if overrides.is_empty() {
                 Ok(Self::TwoArgs {
+                    cx,
                     components,
                     wrapper,
                     lit_str,
                 })
             } else {
                 Ok(Self::TwoArgsWithOverrides {
+                    cx,
                     components,
                     overrides,
                     wrapper,
@@ -113,12 +125,14 @@ impl Parse for CompileMdxInput {
                 let lit_str: LitStr = input.parse()?;
                 return if overrides.is_empty() {
                     Ok(Self::TwoArgs {
+                        cx,
                         components,
                         wrapper,
                         lit_str,
                     })
                 } else {
                     Ok(Self::TwoArgsWithOverrides {
+                        cx,
                         components,
                         overrides,
                         wrapper,
@@ -130,7 +144,7 @@ impl Parse for CompileMdxInput {
 
         // Pattern 3: "path.mdx", the backward compatible one-arg form
         let lit_str: LitStr = input.parse()?;
-        Ok(Self::OneArg { lit_str })
+        Ok(Self::OneArg { cx, lit_str })
     }
 }
 

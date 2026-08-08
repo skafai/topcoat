@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{Path, spanned::Spanned};
 use topcoat_core_grammar::paths::{topcoat_error, topcoat_view};
@@ -40,6 +40,14 @@ impl Component {
             quote! { .child(#child) }
         });
 
+        // Minted at call-site rather than inheriting `path`'s span: `path`
+        // often comes from a macro argument (a component registry built by
+        // another macro, for example), and spanning `__cx` on it ties the
+        // identifier's hygiene to that foreign syntax context, hiding the
+        // `let __cx` binding a `cx =>` argument (or ambient `#[component]`
+        // binding) established at this macro's own invocation.
+        let cx_ident = Ident::new("__cx", Span::call_site());
+
         quote_spanned! {path.span()=> {
             use #topcoat_view::Component;
             let props = #path::props_builder()#(#setters)*#child.build();
@@ -48,7 +56,7 @@ impl Component {
             #[allow(clippy::default_constructed_unit_structs)]
             Component::render(
                 #path::default(),
-                __cx,
+                #cx_ident,
                 props,
             )
         }}
@@ -75,6 +83,10 @@ impl Component {
         });
         let child = children.emit_future();
 
+        // See the comment in `render_future` on why `__cx` is minted at
+        // call-site rather than inheriting `path`'s span.
+        let cx_ident = Ident::new("__cx", Span::call_site());
+
         quote_spanned! {path.span()=> {
             async {
                 use #topcoat_view::Component;
@@ -85,7 +97,7 @@ impl Component {
                 #[allow(clippy::default_constructed_unit_structs)]
                 let __render = Component::render(
                     #path::default(),
-                    __cx,
+                    #cx_ident,
                     props,
                 );
                 let __child = #child;

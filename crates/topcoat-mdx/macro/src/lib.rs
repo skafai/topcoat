@@ -70,24 +70,27 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         }
     };
 
-    let (components, wrapper, overrides, lit_str) = match input {
+    let (cx, components, wrapper, overrides, lit_str) = match input {
         CompileMdxInput::TwoArgs {
+            cx,
             components,
             wrapper,
             lit_str,
         } => (
+            cx,
             components,
             wrapper,
             Vec::<(&'static str, SynPath)>::new(),
             lit_str,
         ),
         CompileMdxInput::TwoArgsWithOverrides {
+            cx,
             components,
             overrides,
             wrapper,
             lit_str,
-        } => (components, wrapper, overrides, lit_str),
-        CompileMdxInput::OneArg { lit_str } => (Vec::new(), None, Vec::new(), lit_str),
+        } => (cx, components, wrapper, overrides, lit_str),
+        CompileMdxInput::OneArg { cx, lit_str } => (cx, Vec::new(), None, Vec::new(), lit_str),
     };
 
     let path_str = lit_str.value();
@@ -122,6 +125,21 @@ pub fn compile_mdx(tokens: TokenStream) -> TokenStream {
         }
     } else {
         quote! { #view_tokens }
+    };
+
+    // When an explicit context is named, bind it to the `__cx` identifier the
+    // generated code (component invocations) reads from. Inside a
+    // `#[component]`, `#[page]`, `#[layout]`, or `#[shard]` this binding is
+    // already in scope, so `cx =>` is omitted and the tokens are emitted
+    // untouched, mirroring `view! { cx => ... }`.
+    let final_tokens = match &cx {
+        Some(cx) => quote! {
+            {
+                #cx
+                #final_tokens
+            }
+        },
+        None => final_tokens,
     };
 
     // Frontmatter is parsed to keep it out of the rendered body, but

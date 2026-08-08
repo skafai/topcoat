@@ -95,7 +95,26 @@ compile_mdx!(
 )
 ```
 
-The wrapper receives the compiled content as a `child` prop. This requires a `__cx: &Cx` variable in scope from the enclosing `view!` call.
+The wrapper receives the compiled content as a `child` prop.
+
+## Rendering outside a component
+
+Inside a `#[component]`, `#[page]`, `#[layout]`, or `#[shard]`, the request context is in scope implicitly, as in the examples above. In a plain function (or anywhere else the context is not already bound to `__cx`), pass it explicitly with a leading `cx =>` argument, mirroring `view! { cx => ... }`:
+
+```rust,ignore
+use topcoat::{context::Cx, mdx::compile_mdx};
+
+async fn render(cx: &Cx) -> topcoat::Result {
+    compile_mdx!(cx =>
+        mdx_components! {
+            Callout => components::callout,
+        },
+        "content/post.mdx"
+    )
+}
+```
+
+`cx =>` comes first, before the component registry, overrides, and wrapper arguments.
 
 # Features
 

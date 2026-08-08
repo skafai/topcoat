@@ -5,15 +5,16 @@ use topcoat_view_module::{View, component, view};
 
 type Result<T = View> = topcoat::Result<T>;
 
-/// Helper to run `compile_mdx`! with a `__cx` binding so that component
-/// code (`__view(__cx, ...)`) compiles correctly.
+/// Helper to run `compile_mdx!` with an explicit `cx =>` argument so that
+/// component code (`__view(__cx, ...)`) compiles correctly outside a
+/// `#[component]`/`#[page]` body.
 ///
 /// The `compile_mdx!` macro generates code that references `__cx` when
-/// the MDX content contains components. This wrapper provides the binding.
+/// the MDX content contains components; `cx =>` supplies the binding.
 macro_rules! compile_mdx_with_cx {
     ( $cx:expr => $( $arg:tt )* ) => {{
-        let __cx = &$cx;
-        compile_mdx!($( $arg )*)
+        let __cx_ref = &$cx;
+        compile_mdx!(__cx_ref => $( $arg )*)
     }};
 }
 
