@@ -21,11 +21,11 @@ impl Emit for ExprNode {
     }
 }
 
-/// Identifies which builder method an [`ExprNode`] is pushed through when
-/// emitted, so the generated code seals the expression with the right
-/// position and dispatches the corresponding `*ViewParts` trait.
+/// Identifies which builder method a dynamic expression node is pushed
+/// through when emitted, so the generated code seals the expression with the
+/// right position and dispatches the corresponding `*ViewParts` trait.
 #[derive(Copy, Clone)]
-pub(crate) enum ExprKind {
+pub enum ExprKind {
     Node,
     ElementName,
     Attribute,

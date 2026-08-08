@@ -8,8 +8,10 @@ use std::{cell::RefCell, collections::HashMap};
 
 use proc_macro2::Span;
 use syn::Path;
-use topcoat_view_grammar::view::{Node, Nodes, View};
-use topcoat_view_grammar::view::hir::{LowerView, ViewBuilder};
+use topcoat_view_grammar::view::{
+    Node, Nodes, View,
+    hir::{LowerView, ViewBuilder},
+};
 
 use crate::parse::get_parse_options;
 
