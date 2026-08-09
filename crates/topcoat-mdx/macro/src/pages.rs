@@ -480,9 +480,9 @@ pub(crate) fn generate_page_registration(
             ) -> ::std::pin::Pin<
                 Box<dyn ::core::future::Future<Output = #topcoat_error::Result<#topcoat_view::View>> + Send + '_>
             > {
-                ::std::boxed::Box::pin(async move {
+                ::std::boxed::Box::pin(#topcoat_view::internal::build(async move {
                     #render_body
-                })
+                }))
             }
 
             #[allow(non_camel_case_types)]

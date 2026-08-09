@@ -45,6 +45,7 @@ topcoat = { workspace = true, features = ["mdx", "mdx-frontmatter", "view"] }
 topcoat-mdx-grammar.workspace = true
 topcoat-view-grammar.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
+inventory.workspace = true
 markdown.workspace = true
 # Tests deserialize the same frontmatter the macro does, so they need the same
 # parsers rather than a second copy of them.

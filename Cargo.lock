@@ -3259,6 +3259,7 @@ version = "0.5.0"
 dependencies = [
  "heck",
  "ignore",
+ "inventory",
  "markdown",
  "proc-macro2",
  "quote",

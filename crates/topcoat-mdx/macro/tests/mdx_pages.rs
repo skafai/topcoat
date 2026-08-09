@@ -68,6 +68,11 @@ mod wrapper_test {
         view! { <article class="blog-layout">(child)</article> }
     }
 
+    #[component]
+    async fn callout_component(#[default] child: View) -> Result {
+        view! { <div class="callout">(child)</div> }
+    }
+
     // mdx_pages! with wrapper = Path should compile.
     mdx_pages!(
         "tests/fixtures/pages",
@@ -75,9 +80,48 @@ mod wrapper_test {
         wrapper = blog_wrapper
     );
 
+    // A page whose *body* also renders through a component: with `wrapper`,
+    // the walker emits the body as bare `Scope::emit_view()` tokens (meant to
+    // be nested inside an enclosing `view!`'s buffer scope) rather than
+    // `emit_root()`'s self-contained `internal::build(...)`. mdx_pages!'s
+    // generated route handler is the outermost invocation and never opens
+    // that scope itself, so any body content that needs the instruction
+    // buffer (here, `Callout`) panics at render time even though pages with
+    // purely static bodies (`hello-world.mdx` above) render fine.
+    mdx_pages!(
+        "tests/fixtures/component-body",
+        prefix = "/with-wrapper-and-component",
+        components = { Callout => callout_component },
+        wrapper = blog_wrapper
+    );
+
     #[test]
     fn mdx_pages_with_wrapper_compiles() {
         // Compilation proves wrapper tokens were generated.
+    }
+
+    // Regression test: rendering a page (not just compiling its registration)
+    // must not panic with "no view is building on the current task". The
+    // render function's body builds a view through a wrapper component but,
+    // unlike a `#[page]` handler expanded from `view!`, was never wrapped in
+    // `internal::build`, so it had no `ViewBufferScope` of its own to build
+    // into.
+    #[tokio::test]
+    async fn mdx_pages_with_wrapper_renders_without_panicking() {
+        use topcoat::router::{Body, PageFn};
+
+        let page = inventory::iter::<PageFn>()
+            .find(|page| page.path().as_str() == "/with-wrapper-and-component/with-component")
+            .expect("mdx_pages! registered the fixture page");
+
+        let cx = topcoat::context::CxTestBuilder::new().build();
+        let view = page
+            .render(&cx, Body::empty())
+            .await
+            .expect("page renders without panicking");
+        let html = view.render(&cx);
+        assert!(html.contains("blog-layout"));
+        assert!(html.contains("callout"));
     }
 }
 
