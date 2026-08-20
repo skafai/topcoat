@@ -12,7 +12,7 @@ let router = Router::builder().discover().build();
 
 # Combining with `module_router!`
 
-`mdx_pages!` registers each page as a `PageFn` in the link-time inventory. When using `module_router!`, call `.discover()` on the returned builder so that these inventory items are picked up:
+`mdx_pages!` registers each page as a `&'static dyn Page` in the link-time inventory. When using `module_router!`, call `.discover()` on the returned builder so that these inventory items are picked up:
 
 ```rust,ignore
 use topcoat::router::{module_router, RouterBuilderDiscoverExt};

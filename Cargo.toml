@@ -158,9 +158,9 @@ topcoat-view = { version = "0.6.2", path = "crates/topcoat-view" }
 topcoat-view-grammar = { version = "0.6.2", path = "crates/topcoat-view/grammar" }
 topcoat-view-macro = { version = "0.6.2", path = "crates/topcoat-view/macro" }
 
-topcoat-mdx = { version = "0.5.0", path = "crates/topcoat-mdx" }
-topcoat-mdx-grammar = { version = "0.5.0", path = "crates/topcoat-mdx/grammar" }
-topcoat-mdx-macro = { version = "0.5.0", path = "crates/topcoat-mdx/macro" }
+topcoat-mdx = { version = "0.6.2", path = "crates/topcoat-mdx" }
+topcoat-mdx-grammar = { version = "0.6.2", path = "crates/topcoat-mdx/grammar" }
+topcoat-mdx-macro = { version = "0.6.2", path = "crates/topcoat-mdx/macro" }
 
 anyhow = "1.0"
 anymap3 = "1.0"

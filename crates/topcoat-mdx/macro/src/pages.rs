@@ -468,8 +468,9 @@ pub(crate) fn generate_page_registration(
 
     // Only submit to the link-time inventory when discovery is enabled, so
     // that `mdx_pages!` also compiles without the `discover` feature.
-    let submit =
-        cfg!(feature = "discover").then(|| quote! { #topcoat_inventory::submit!(ERASED); });
+    let submit = cfg!(feature = "discover").then(|| {
+        quote! { #topcoat_inventory::submit! { &#unit_name as &'static dyn #topcoat_router::Page } }
+    });
 
     Ok(quote! {
         #[allow(clippy::needless_question_mark)]
@@ -488,15 +489,30 @@ pub(crate) fn generate_page_registration(
             #[allow(non_camel_case_types)]
             struct #unit_name;
 
-            const ERASED: #topcoat_router::PageFn = #topcoat_router::PageFn::const_new(
-                #topcoat_router::OwnedMethods::One(#topcoat_router::Method::GET),
-                ::std::borrow::Cow::Borrowed(#topcoat_router::Path::new(#route_path_lit)),
-                #render_fn_name,
-            );
+            impl #topcoat_router::Page for #unit_name {
+                fn id(&self) -> #topcoat_router::RouteId {
+                    static ID: ::std::sync::LazyLock<#topcoat_router::RouteId> =
+                        ::std::sync::LazyLock::new(#topcoat_router::RouteId::new);
+                    *ID
+                }
 
-            impl ::core::convert::From<#unit_name> for #topcoat_router::PageFn {
-                fn from(_: #unit_name) -> Self {
-                    ERASED
+                fn methods(&self) -> #topcoat_router::Methods<'_> {
+                    const METHODS: #topcoat_router::Methods<'static> =
+                        #topcoat_router::Methods::Only(&[#topcoat_router::Method::GET]);
+                    METHODS
+                }
+
+                fn path(&self) -> &#topcoat_router::Path {
+                    const PATH: &#topcoat_router::Path = #topcoat_router::Path::new(#route_path_lit);
+                    PATH
+                }
+
+                fn render<'cx>(
+                    &'cx self,
+                    cx: &'cx #topcoat_context::Cx,
+                    body: #topcoat_router::Body,
+                ) -> #topcoat_router::ViewFuture<'cx> {
+                    #render_fn_name(cx, body)
                 }
             }
 

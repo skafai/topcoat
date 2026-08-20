@@ -108,9 +108,9 @@ mod wrapper_test {
     // into.
     #[tokio::test]
     async fn mdx_pages_with_wrapper_renders_without_panicking() {
-        use topcoat::router::{Body, PageFn};
+        use topcoat::router::{Body, Page};
 
-        let page = inventory::iter::<PageFn>()
+        let page = inventory::iter::<&'static dyn Page>()
             .find(|page| page.path().as_str() == "/with-wrapper-and-component/with-component")
             .expect("mdx_pages! registered the fixture page");
 

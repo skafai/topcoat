@@ -11,7 +11,7 @@ use topcoat::{
 
 pub fn router() -> topcoat::router::Router {
     // module_router! discovers #[page]/#[layout]/#[route] from the module tree.
-    // Converting to RouterBuilder and running discover() picks up PageFn items
+    // Converting to RouterBuilder and running discover() picks up these registered pages
     // submitted by mdx_pages! and other inventory-based registrations.
     module_router!().discover().build()
 }

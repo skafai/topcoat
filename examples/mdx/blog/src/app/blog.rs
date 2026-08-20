@@ -3,7 +3,7 @@ use topcoat::{Result, mdx::mdx_pages, router::page, view::view};
 // `mdx_pages!` must be at module level: it generates consts, functions, and
 // inventory registrations that cannot appear inside a function body.
 //
-// Each discovered page registers as a `PageFn` in the link-time inventory.
+// Each discovered page registers itself in the link-time inventory.
 // When using `module_router!`, call `.discover()` on the builder to pick
 // these up (see `app.rs`).
 mdx_pages!("posts", prefix = "/blog");

@@ -1615,7 +1615,7 @@ checksum = "8863b587001c1b9a8a4e36008cebc6b3612cb1226fe2de94858e06092687b608"
 
 [[package]]
 name = "mdx-blog"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "serde",
  "tokio",
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-components"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-content-index"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -1643,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-docs-site"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-frontmatter"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "serde",
  "tokio",
@@ -1660,7 +1660,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-gfm"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -1668,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-overrides"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-pages"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-simple"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "tokio",
  "topcoat",
@@ -3242,7 +3242,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-mdx"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "serde",
  "serde-saphyr",
@@ -3253,7 +3253,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-mdx-grammar"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "heck",
  "markdown",
@@ -3265,7 +3265,7 @@ dependencies = [
 
 [[package]]
 name = "topcoat-mdx-macro"
-version = "0.5.0"
+version = "0.6.2"
 dependencies = [
  "heck",
  "ignore",

@@ -15,7 +15,7 @@ pub async fn highlight(#[default] child: View) -> Result {
 // --- Pages -------------------------------------------------------------------
 
 // `mdx_pages!` must be at module level. It scans `pages/` at compile time and
-// registers a `PageFn` per file in the link-time inventory, so `/home` and
+// registers each file as a page in the link-time inventory, so `/home` and
 // `/features` exist without a hand-written handler. The shared `components`
 // registry applies to every file in the scan.
 mdx_pages!(
