@@ -10,7 +10,7 @@ use super::{
 use crate::view::{NamedArg, Nodes};
 
 /// AST nodes that can lower themselves into a [`ViewBuilder`].
-pub(crate) trait LowerView {
+pub trait LowerView {
     fn lower(&self, builder: &mut ViewBuilder);
 }
 
@@ -18,9 +18,9 @@ pub(crate) trait LowerView {
 /// expansion is emitted from.
 ///
 /// Adjacent literal markup is concatenated into `static_segment` and flushed
-/// as a single [`Node::StaticSegment`] whenever a dynamic node (expression,
+/// as a single static segment node whenever a dynamic node (expression,
 /// control flow) is lowered.
-pub(crate) struct ViewBuilder {
+pub struct ViewBuilder {
     nodes: Vec<Node>,
     static_segment: String,
     /// Numbers component invocation sites in lowering order, shared across
@@ -32,7 +32,14 @@ pub(crate) struct ViewBuilder {
     repeats: bool,
 }
 
+impl Default for ViewBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ViewBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -171,15 +178,16 @@ impl ViewBuilder {
     }
 
     /// Flushes any pending literal markup and returns the lowered [`Scope`].
+    #[must_use]
     pub fn finish(mut self) -> Scope {
         self.flush();
         Scope::new(self.nodes)
     }
 }
 
-/// Collects the arms of a [`Node::MatchExpr`], each lowered into its own
+/// Collects the arms of a `match` expression, each lowered into its own
 /// [`Scope`].
-pub(crate) struct MatchArmsBuilder {
+pub struct MatchArmsBuilder {
     arms: Vec<MatchArm>,
     /// An empty builder in the enclosing builder's context, cloned as the
     /// starting point of every arm body.

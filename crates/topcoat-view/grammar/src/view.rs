@@ -3,7 +3,7 @@ mod document_type;
 mod element;
 mod element_name;
 mod element_tag;
-pub(crate) mod hir;
+pub mod hir;
 mod html_ident;
 mod node;
 mod nodes;

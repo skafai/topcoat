@@ -5,6 +5,7 @@ mod node;
 mod scope;
 
 pub(crate) use bindings::*;
-pub(crate) use builder::*;
+pub use builder::*;
+pub use node::ExprKind;
 pub(crate) use node::*;
-pub(crate) use scope::*;
+pub use scope::*;

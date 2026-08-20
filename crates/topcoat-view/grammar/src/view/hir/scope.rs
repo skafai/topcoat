@@ -9,7 +9,7 @@ use super::{
 
 /// The lowered form of a `view!` invocation: the HIR between the view AST and
 /// the emitted `TokenStream`. Built by [`ViewBuilder`](super::ViewBuilder).
-pub(crate) struct Scope {
+pub struct Scope {
     nodes: Vec<Node>,
 }
 
@@ -18,6 +18,7 @@ impl Scope {
         Self { nodes }
     }
 
+    #[must_use]
     pub fn emit_root(&self) -> TokenStream {
         let view = self.emit_view();
         let body = quote! {
@@ -57,7 +58,8 @@ impl Scope {
     /// futures are joined so sibling components render concurrently. With at
     /// most one such node there is nothing to overlap, and the node awaits
     /// inline.
-    pub(crate) fn emit_view(&self) -> TokenStream {
+    #[must_use]
+    pub fn emit_view(&self) -> TokenStream {
         if self.nodes.is_empty() {
             // Optimized path: The view has no content.
             quote! { #topcoat_view::View::empty() }

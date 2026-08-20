@@ -8,6 +8,7 @@ mod statement;
 mod static_segment;
 
 pub(crate) use component::*;
+pub use expr_node::ExprKind;
 pub(crate) use expr_node::*;
 pub(crate) use for_loop::*;
 pub(crate) use if_else::*;
